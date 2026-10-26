@@ -43,3 +43,7 @@ Opens on http://localhost:5176 (fixed port, so it can run alongside `exxat-one-b
 - Everything else is the design team's shell, unchanged except one added icon (`circleCheck`).
 
 Styling uses the shell's tokens (Inter, `exxat-tokens.css`, neutral/blue ramps, `bg-card` cards) and its `ui/` components.
+
+## Live version (GitHub Pages)
+
+Built with `VITE_HASH_ROUTER=1 npx vite build --base=/Bulk-Clone-Availability/` and published to the `gh-pages` branch. The hosted build uses hash URLs (`#/site/…`) because Pages can't serve deep links; local dev (`npm run dev`) keeps normal URLs.

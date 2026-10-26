@@ -1,5 +1,6 @@
 import {
   createBrowserRouter,
+  createHashRouter,
   Navigate,
   Outlet,
   useNavigate,
@@ -77,8 +78,12 @@ function SchoolLayout() {
 
 /**
  * React Router v7 route tree — one line per screen under shell layouts.
+ * The GitHub Pages build (VITE_HASH_ROUTER=1) uses hash URLs, since Pages can't
+ * serve deep links like /site/…/availability; local dev keeps normal URLs.
  */
-export const router = createBrowserRouter([
+const createAppRouter = import.meta.env.VITE_HASH_ROUTER ? createHashRouter : createBrowserRouter;
+
+export const router = createAppRouter([
   {
     path: '/',
     element: <RootLayout />,
