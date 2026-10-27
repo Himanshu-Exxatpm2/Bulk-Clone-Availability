@@ -92,15 +92,19 @@ export function BulkCloneWizard({
     [initialAvailabilities, removedIds],
   );
 
-  // Final names come from the rows still in the batch, so a removal re-numbers the rest
-  const finalNames = useMemo(
-    () => finalizeNames(activeAvailabilities, step1Data.rawNames, existingNames),
-    [activeAvailabilities, step1Data.rawNames, existingNames],
+  // Names shown in steps 1 to 4 are checked only inside the batch, from the rows still in it,
+  // so a removal re-numbers the rest. Existing availability names are checked at creation.
+  const batchNames = useMemo(
+    () => finalizeNames(activeAvailabilities, step1Data.rawNames, []),
+    [activeAvailabilities, step1Data.rawNames],
   );
   const resolvedNames = useMemo(
-    () => Object.fromEntries(Object.entries(finalNames).map(([id, f]) => [id, f.name])),
-    [finalNames],
+    () => Object.fromEntries(Object.entries(batchNames).map(([id, f]) => [id, f.name])),
+    [batchNames],
   );
+  // Names as saved: also numbered against every existing availability. Fixed when Create is confirmed.
+  const [savedNames, setSavedNames] = useState<Record<string, string>>({});
+  const [confirmCreate, setConfirmCreate] = useState(false);
 
   // What the backend rejects. Only read once creation starts; nothing earlier knows.
   const draftIssues = useMemo(() => {
@@ -135,12 +139,45 @@ export function BulkCloneWizard({
   const step4Valid =
     !!step4Data.defaultPreference &&
     isCardValid(step4Data.defaultPreference) &&
-    !(step4Data.publishMode === 'individual' && Object.values(step4Data.overrides).some((o) => !isCardValid(o))) &&
+    !(
+      step4Data.publishMode === 'individual' &&
+      Object.entries(step4Data.overrides).some(([id, o]) => activeAvailabilities.some((a) => a.id === id) && !isCardValid(o))
+    ) &&
     Object.keys(publishIssues).length === 0;
 
+  // Clones that go live as soon as they are created, grouped by who sees them
+  const goLiveNow = (() => {
+    const today = todayISO();
+    const byAudience = new Map<string, number>();
+    for (const a of activeAvailabilities) {
+      const pref =
+        step4Data.publishMode === 'individual' && step4Data.overrides[a.id]
+          ? step4Data.overrides[a.id]
+          : step4Data.defaultPreference;
+      const live = pref?.publishWhen === 'Now' || (pref?.publishWhen === 'Scheduled' && pref.publishOn <= today);
+      if (live && pref?.whoSees) byAudience.set(pref.whoSees, (byAudience.get(pref.whoSees) ?? 0) + 1);
+    }
+    return [...byAudience.entries()];
+  })();
+  const goLiveText = (() => {
+    const total = goLiveNow.reduce((sum, [, n]) => sum + n, 0);
+    const parts = goLiveNow.map(([who, n], i) => (i === 0 ? `${n} ${n === 1 ? 'availability' : 'availabilities'} will go live now to ${who}` : `${n} to ${who}`));
+    return total === 0 ? '' : parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}` : parts[0];
+  })();
+
+  const startCreation = () => {
+    if (!step4Valid) return;
+    setConfirmCreate(false);
+    // Names are now also numbered against every availability already in the list
+    const saved = finalizeNames(activeAvailabilities, step1Data.rawNames, existingNames);
+    setSavedNames(Object.fromEntries(Object.entries(saved).map(([id, f]) => [id, f.name])));
+    setWizardState('progress');
+  };
+  // Anything that goes live straight away is confirmed first; otherwise creation starts at once
   const handleCreate = () => {
     if (!step4Valid) return;
-    setWizardState('progress');
+    if (goLiveNow.length > 0) setConfirmCreate(true);
+    else startCreation();
   };
 
   const isLastStep = currentStep === 4;
@@ -178,7 +215,7 @@ export function BulkCloneWizard({
       return {
         ...r.availability,
         id: `clone-${Date.now()}-${newAvailabilityId()}`,
-        name: resolvedNames[r.availability.id] || r.availability.name,
+        name: savedNames[r.availability.id] || resolvedNames[r.availability.id] || r.availability.name,
         startDate:
           step2Data.dates[r.availability.id]?.startDate ?? r.availability.startDate,
         endDate:
@@ -251,7 +288,8 @@ export function BulkCloneWizard({
               <div className="flex-1 overflow-y-auto min-h-0 p-4">
                 <CreationProgress
                   availabilities={activeAvailabilities}
-                  resolvedNames={resolvedNames}
+                  resolvedNames={savedNames}
+                  stepOneNames={resolvedNames}
                   draftIssues={draftIssues}
                   onComplete={(results) => {
                     setCreationResults(results);
@@ -278,7 +316,8 @@ export function BulkCloneWizard({
               <div className="flex-1 overflow-y-auto min-h-0 p-4">
                 <CreationSummary
                   results={creationResults}
-                  resolvedNames={resolvedNames}
+                  resolvedNames={savedNames}
+                  stepOneNames={resolvedNames}
                   onDone={() => onCloneComplete(buildCreatedAvailabilities())}
                   onViewDrafts={() => onCloneComplete(buildCreatedAvailabilities())}
                 />
@@ -297,7 +336,7 @@ export function BulkCloneWizard({
                 {currentStep === 1 && (
                   <Step1Naming
                     availabilities={activeAvailabilities}
-                    existingNames={existingNames}
+                    existingNames={[]}
                     initialData={step1Data}
                     onDataChange={setStep1Data}
                     onValidityChange={setStep1IsValid}
@@ -369,6 +408,21 @@ export function BulkCloneWizard({
             </>
           )}
       </SheetContent>
+
+      <AlertDialog open={confirmCreate} onOpenChange={setConfirmCreate}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Go live now?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {goLiveText}. Schools will be able to see and request {goLiveNow.reduce((sum, [, n]) => sum + n, 0) === 1 ? 'it' : 'them'} straight away.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={startCreation}>Create availabilities</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog open={confirmDiscard} onOpenChange={setConfirmDiscard}>
         <AlertDialogContent>

@@ -58,7 +58,6 @@ interface AvailabilityListTableProps {
   onSortChange: (sort: SortState | null) => void;
   onSelectAll: (checked: boolean) => void;
   onSelectOne: (id: string, checked: boolean) => void;
-  onClone: (id: string) => void;
   onBulkClone: () => void;
 }
 
@@ -105,43 +104,40 @@ function StatusBadge({ status }: { status: Availability['status'] }) {
 export const MAX_CLONE_SELECTION = 25;
 export const ADVISORY_THRESHOLD = 15;
 
-// ── Selection toolbar ────────────────────────────────────────────────────────
-// • 0 selected → disabled button (disabled-not-hidden)
-// • 1 selected → nudge text replaces button (single rows use the row Clone action)
-// • ≥2 selected → enabled "Clone N Availabilities" button
+// ── Selection bar ────────────────────────────────────────────────────────────
+// The list itself is unchanged; the only additions are the checkboxes and this bar.
+// • 0 selected → nothing is shown
+// • 1 selected → count, a disabled Clone action and a hint (the row copy icon clones one availability)
+// • ≥2 selected → enabled "Clone N Availabilities"
 // • ≥15 selected → dismissible advisory; 25 is the hard cap
 function SelectionToolbar({
   selectedCount,
-  totalCount,
   onBulkClone,
 }: {
   selectedCount: number;
-  totalCount: number;
   onBulkClone: () => void;
 }) {
   const [advisoryDismissed, setAdvisoryDismissed] = useState(false);
   const atCap = selectedCount >= MAX_CLONE_SELECTION;
   const showAdvisory = selectedCount >= ADVISORY_THRESHOLD && !advisoryDismissed;
+  if (selectedCount === 0) return null;
 
   return (
     <div className="border-b border-neutral-200 bg-neutral-50">
       <div className="flex items-center justify-between gap-4 px-4 py-2 min-h-[48px]">
         <span className="text-sm text-neutral-800">
-          {selectedCount > 0
-            ? `${selectedCount} selected${atCap ? ` (maximum ${MAX_CLONE_SELECTION})` : ''}`
-            : `${totalCount} ${totalCount === 1 ? 'availability' : 'availabilities'} · Select rows to bulk clone`}
+          {`${selectedCount} selected${atCap ? ` (maximum ${MAX_CLONE_SELECTION})` : ''}`}
         </span>
 
-        {selectedCount === 1 ? (
-          <p className="text-sm text-blue-600">
-            Select 2 or more to bulk clone — use Clone for just this one.
-          </p>
-        ) : (
+        <div className="flex items-center gap-3">
+          {selectedCount === 1 && (
+            <p className="text-sm text-blue-600">Select 2 or more to bulk clone</p>
+          )}
           <Button size="sm" disabled={selectedCount < 2} onClick={onBulkClone}>
             <FontAwesomeIcon name="copy" className="w-4 h-4" aria-hidden="true" />
             {selectedCount >= 2 ? `Clone ${selectedCount} Availabilities` : 'Clone Availabilities'}
           </Button>
-        )}
+        </div>
       </div>
 
       {showAdvisory && (
@@ -281,7 +277,6 @@ export function AvailabilityListTable({
   onSortChange,
   onSelectAll,
   onSelectOne,
-  onClone,
   onBulkClone,
 }: AvailabilityListTableProps) {
   const columns = SCROLL_COLUMNS.filter((c) => !hiddenColumns.includes(c.key));
@@ -303,7 +298,6 @@ export function AvailabilityListTable({
     <div>
       <SelectionToolbar
         selectedCount={selectedIds.length}
-        totalCount={totalCount}
         onBulkClone={onBulkClone}
       />
 
@@ -424,8 +418,8 @@ export function AvailabilityListTable({
                           variant="ghost"
                           size="icon"
                           className="h-8 w-8 text-neutral-800 hover:bg-neutral-100"
-                          aria-label={`Clone ${avail.name}`}
-                          onClick={() => onClone(avail.id)}
+                          aria-label={`Copy ${avail.name}`}
+                          onClick={() => console.log('Copy (existing row action, not part of bulk clone):', avail.id)}
                         >
                           <FontAwesomeIcon name="copy" className="h-4 w-4" aria-hidden="true" />
                         </Button>

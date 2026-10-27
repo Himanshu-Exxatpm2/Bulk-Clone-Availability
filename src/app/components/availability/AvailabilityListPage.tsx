@@ -281,10 +281,6 @@ export function AvailabilityListPage({ currentPath, onNavigate }: AvailabilityLi
     }
   };
 
-  const handleClone = (id: string) => {
-    setSelectedIds([id]);
-    setWizardOpen(true);
-  };
   const handleBulkClone = () => setWizardOpen(true);
 
   const selectedAvailabilities = useMemo<Availability[]>(
@@ -306,31 +302,8 @@ export function AvailabilityListPage({ currentPath, onNavigate }: AvailabilityLi
           // Closing without creating keeps the selection, so the coordinator can reopen it
           onClose={() => setWizardOpen(false)}
           onCloneComplete={(newOnes) => {
-            if (newOnes.length > 0) {
-              // Dedup against the full list: if a clone's resolved name already
-              // exists, append #2, #3 … so names stay unique in the list.
-              setAvailabilities((prev) => {
-                const existingNames = new Set(prev.map((a) => a.name));
-                const nameCounts = new Map<string, number>();
-                for (const a of prev) {
-                  const base = a.name.replace(/ #\d+$/, '');
-                  nameCounts.set(base, (nameCounts.get(base) ?? 0) + 1);
-                }
-                const deduped = newOnes.map((a) => {
-                  const base = a.name.replace(/ #\d+$/, '');
-                  if (!existingNames.has(a.name) && !existingNames.has(base)) {
-                    existingNames.add(a.name);
-                    return a;
-                  }
-                  const next = (nameCounts.get(base) ?? 1) + 1;
-                  nameCounts.set(base, next);
-                  const suffixed = `${base} #${next}`;
-                  existingNames.add(suffixed);
-                  return { ...a, name: suffixed };
-                });
-                return [...deduped, ...prev];
-              });
-            }
+            // Names were already numbered against the existing list when the clones were created
+            if (newOnes.length > 0) setAvailabilities((prev) => [...newOnes, ...prev]);
             setWizardOpen(false);
             setSelectedIds([]);
           }}
@@ -441,6 +414,9 @@ export function AvailabilityListPage({ currentPath, onNavigate }: AvailabilityLi
             })}
 
             <div className="ml-auto flex items-center gap-2">
+              <span className="mr-1 text-sm text-neutral-700">
+                {visibleAvailabilities.length} {visibleAvailabilities.length === 1 ? 'availability' : 'availabilities'}
+              </span>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button
@@ -534,7 +510,6 @@ export function AvailabilityListPage({ currentPath, onNavigate }: AvailabilityLi
             onSortChange={setSort}
             onSelectAll={handleSelectAll}
             onSelectOne={handleSelectOne}
-            onClone={handleClone}
             onBulkClone={handleBulkClone}
           />
         </section>

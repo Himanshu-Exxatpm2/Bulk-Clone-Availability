@@ -41,9 +41,9 @@ function formatDate(iso: string): string {
   });
 }
 
-/** Both dates set, in order, and not starting before today. */
-function rowIsValid(startDate: string, endDate: string, today: string): boolean {
-  return !!startDate && !!endDate && startDate <= endDate && startDate >= today;
+/** Both dates set and in order. A start date in the past is allowed. */
+function rowIsValid(startDate: string, endDate: string): boolean {
+  return !!startDate && !!endDate && startDate <= endDate;
 }
 
 /** Shortest roll that puts every clone's start on or after today; 1 year if none does. */
@@ -107,7 +107,7 @@ export function Step2Dates({
   const onValidityChangeRef = useRef(onValidityChange);
   onValidityChangeRef.current = onValidityChange;
 
-  const customRangeValid = rowIsValid(customStart, customEnd, today);
+  const customRangeValid = rowIsValid(customStart, customEnd);
   const customOrderError = !!customStart && !!customEnd && customStart > customEnd;
 
   // Propagate data and validity whenever anything changes
@@ -117,10 +117,10 @@ export function Step2Dates({
       availabilities.length > 0 &&
       availabilities.every((a) => {
         const d = dates[a.id];
-        return d && rowIsValid(d.startDate, d.endDate, today);
+        return d && rowIsValid(d.startDate, d.endDate);
       });
     onValidityChangeRef.current(mode === 'custom' ? customRangeValid && rowsValid : rowsValid);
-  }, [mode, dates, rollMonths, customStart, customEnd, customRangeValid, availabilities, today]);
+  }, [mode, dates, rollMonths, customStart, customEnd, customRangeValid, availabilities]);
 
   // ── Mutations ─────────────────────────────────────────────────────────────
 
@@ -139,7 +139,7 @@ export function Step2Dates({
     const nextEnd = field === 'end' ? value : customEnd;
     if (field === 'start') setCustomStart(value);
     else setCustomEnd(value);
-    if (rowIsValid(nextStart, nextEnd, today)) {
+    if (rowIsValid(nextStart, nextEnd)) {
       setDates(uniformDates(availabilities, nextStart, nextEnd));
     }
   };
@@ -148,7 +148,7 @@ export function Step2Dates({
     setMode(next);
     if (next === 'roll') {
       setDates(rolledDates(availabilities, rollMonths));
-    } else if (rowIsValid(customStart, customEnd, today)) {
+    } else if (rowIsValid(customStart, customEnd)) {
       setDates(uniformDates(availabilities, customStart, customEnd));
     } else {
       // No range yet: clear the rows rather than leave the rolled dates showing
@@ -167,10 +167,7 @@ export function Step2Dates({
   const resetDisabled = mode === 'custom' && !customRangeValid;
   const awaitingCustomRange = mode === 'custom' && !customRangeValid;
   const rollLabel = rollMonths === 12 ? '1 year' : `${rollMonths} months`;
-  const pastCount = availabilities.filter((a) => {
-    const d = dates[a.id];
-    return d?.startDate && d.startDate < today;
-  }).length;
+
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -192,7 +189,7 @@ export function Step2Dates({
               <strong>Roll Forward</strong> moves every start and end date ahead by <strong>3 months</strong>,{' '}
               <strong>6 months</strong> or <strong>1 year</strong> from the original rotation window. Feb 29 dates
               are clamped to Feb 28 in non-leap years. <strong>Custom Date</strong> lets you pick one start and one
-              end date that is applied to every availability in the batch. A clone can't start before today.
+              end date that is applied to every availability in the batch.
             </p>
             <p className="text-xs text-blue-700 leading-relaxed font-medium">
               Either way, you can still edit any row below by clicking into its date field.
@@ -279,7 +276,6 @@ export function Step2Dates({
                 <div className={customOrderError ? 'ring-1 ring-negative-default rounded-md' : ''}>
                   <DateField
                     value={customStart}
-                    minDate={today}
                     onChange={(v) => handleCustomChange('start', v)}
                     placeholder="Select start date"
                     ariaLabel="Custom start date for all availabilities"
@@ -291,7 +287,7 @@ export function Step2Dates({
                 <div className={customOrderError ? 'ring-1 ring-negative-default rounded-md' : ''}>
                   <DateField
                     value={customEnd}
-                    minDate={customStart || today}
+                    minDate={customStart || undefined}
                     onChange={(v) => handleCustomChange('end', v)}
                     placeholder="Select end date"
                     ariaLabel="Custom end date for all availabilities"
@@ -311,16 +307,6 @@ export function Step2Dates({
           </div>
         )}
       </div>
-
-      {pastCount > 0 && (
-        <div role="alert" className="flex items-start gap-2 rounded-lg border border-negative-default/30 bg-negative-default/5 p-3 text-sm text-negative-default">
-          <FontAwesomeIcon name="triangleExclamation" className="w-4 h-4 mt-0.5 shrink-0" aria-hidden="true" />
-          <span>
-            {pastCount} {pastCount === 1 ? 'clone starts' : 'clones start'} before today. Clones can't be created in the
-            past — {mode === 'roll' ? 'choose a longer roll, switch to Custom Date, or ' : ''}edit the rows marked below.
-          </span>
-        </div>
-      )}
 
       {/* ── Date preview table ───────────────────────────────────────────── */}
       <div className={`${CARD} overflow-hidden`}>
@@ -368,7 +354,6 @@ export function Step2Dates({
               const startEmpty = !row.startDate;
               const endEmpty = !row.endDate;
               const dateOrderErr = !!row.startDate && !!row.endDate && row.startDate > row.endDate;
-              const pastErr = !!row.startDate && row.startDate < today;
               // In custom mode, don't flag rows red before a range has been chosen
               const showEmptyErr = !awaitingCustomRange;
               const isEven = idx % 2 === 0;
@@ -389,10 +374,9 @@ export function Step2Dates({
                   </td>
 
                   <td className="px-4 py-3 border-b border-neutral-100 align-top">
-                    <div className={(showEmptyErr && startEmpty) || dateOrderErr || pastErr ? 'ring-1 ring-negative-default rounded-md' : ''}>
+                    <div className={(showEmptyErr && startEmpty) || dateOrderErr ? 'ring-1 ring-negative-default rounded-md' : ''}>
                       <DateField
                         value={row.startDate}
-                        minDate={today}
                         onChange={(v) => updateDate(a.id, 'startDate', v)}
                         placeholder="Start date"
                         ariaLabel={`New start date for ${a.name}`}
@@ -404,15 +388,12 @@ export function Step2Dates({
                     <div className={(showEmptyErr && endEmpty) || dateOrderErr ? 'ring-1 ring-negative-default rounded-md' : ''}>
                       <DateField
                         value={row.endDate}
-                        minDate={row.startDate && row.startDate >= today ? row.startDate : today}
+                        minDate={row.startDate || undefined}
                         onChange={(v) => updateDate(a.id, 'endDate', v)}
                         placeholder="End date"
                         ariaLabel={`New end date for ${a.name}`}
                       />
                     </div>
-                    {pastErr && (
-                      <p className="text-xs text-negative-default mt-1">Starts in the past</p>
-                    )}
                     {dateOrderErr && (
                       <p className="text-xs text-negative-default mt-1">Start must be before end</p>
                     )}

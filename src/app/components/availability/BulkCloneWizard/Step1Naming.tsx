@@ -76,15 +76,19 @@ export function Step1Naming({
     [availabilities, rawNames, existingNames],
   );
 
-  // Only the name itself is checked here. Nothing about location, discipline,
-  // program type or experience type is checked until the clones are created; any
-  // problem with those is reported there and the clone is saved as a draft.
+  // Only the name itself is checked here, and only inside the batch. Existing
+  // availability names are checked when the clones are created. Nothing about
+  // location, discipline, program type or experience type is checked until then;
+  // any problem with those is reported there and the clone is saved as a draft.
   const rowChecks = useMemo(() => {
-    const out: Record<string, { warnings: string[] }> = {};
+    const out: Record<string, { errors: string[]; warnings: string[] }> = {};
     for (const a of availabilities) {
+      const errors: string[] = [];
       const warnings: string[] = [];
       if (hasTemplate) {
         const f = finalNames[a.id];
+        // A name can never be empty: it needs at least 1 character
+        if (!f?.name) errors.push("Name can't be empty");
         if (f?.suffix) {
           warnings.push(
             f.clash === 'existing'
@@ -93,12 +97,16 @@ export function Step1Naming({
           );
         }
       }
-      out[a.id] = { warnings };
+      out[a.id] = { errors, warnings };
     }
     return out;
   }, [availabilities, hasTemplate, finalNames]);
 
-  const isValid = hasTemplate && unknown.length === 0 && availabilities.length > 0;
+  const isValid =
+    hasTemplate &&
+    unknown.length === 0 &&
+    availabilities.length > 0 &&
+    availabilities.every((a) => rowChecks[a.id].errors.length === 0);
 
   useEffect(() => {
     onValidityChangeRef.current(isValid);
@@ -187,7 +195,7 @@ export function Step1Naming({
             </p>
             <ul className="mt-2 space-y-1 text-xs text-blue-700 list-disc list-inside">
               <li>Use a separator (e.g. <span className="font-mono bg-blue-100 px-0.5 rounded"> – </span>) between fields, and add the season and year as plain text so the clone is clearly distinct from the original.</li>
-              <li>A name can't repeat one already in your list or in this batch. If it does, "#2", "#3" … is added.</li>
+              <li>If two clones in this batch get the same name, "#2", "#3" … is added. Names are also checked against your existing availabilities when the clones are created, and the final name is shown then.</li>
             </ul>
           </div>
         </div>
@@ -300,7 +308,7 @@ export function Step1Naming({
               const locs = parseLocations(a.location);
               const showLocPicker = locs.length > 1 && locationInTemplate;
               const final = finalNames[a.id];
-              const { warnings } = rowChecks[a.id];
+              const { errors, warnings } = rowChecks[a.id];
 
               return (
                 <tr key={a.id} className={idx % 2 === 0 ? 'bg-card' : 'bg-neutral-50/40'}>
@@ -353,13 +361,19 @@ export function Step1Naming({
                   <td className="px-4 py-3 border-b border-neutral-100 align-top">
                     {hasTemplate && unknown.length === 0 && (
                       <div className="space-y-1.5">
+                        {errors.map((msg) => (
+                          <p key={msg} className="flex items-start gap-1.5 text-xs text-negative-default">
+                            <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-negative-default" />
+                            {msg}
+                          </p>
+                        ))}
                         {warnings.map((msg) => (
                           <p key={msg} className="flex items-start gap-1.5 text-xs text-warning-default">
                             <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-warning-default" />
                             {msg}
                           </p>
                         ))}
-                        {warnings.length === 0 && (
+                        {errors.length === 0 && warnings.length === 0 && (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-positive-default/10 border border-positive-default/30 text-positive-default text-xs font-medium">
                             <span className="w-1.5 h-1.5 rounded-full bg-positive-default flex-shrink-0" />
                             Unique

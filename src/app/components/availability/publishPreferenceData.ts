@@ -46,12 +46,9 @@ export interface PublishPreferenceCardState {
   tierDates: TierDateOverride[]; // per-tier overrides set via "Set Preferred Dates for Tiers"
 }
 
+/** Today's date in UTC, as everywhere on the platform. */
 export function todayISODate(): string {
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = String(now.getMonth() + 1).padStart(2, '0');
-  const d = String(now.getDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
+  return new Date().toISOString().slice(0, 10);
 }
 
 let cardSeq = 0;
@@ -89,6 +86,8 @@ export function isCardValid(card: PublishPreferenceCardState): boolean {
  */
 export function publishIssuesForStart(card: PublishPreferenceCardState, startDate: string): string[] {
   if (!startDate || card.publishWhen === 'Do Not Publish' || !card.publishWhen) return [];
+  // A rotation that already started is not checked: only rotations starting today or later must be requestable first
+  if (startDate < todayISODate()) return [];
   const issues: string[] = [];
   if (card.publishWhen === 'Scheduled' && card.publishOn && card.publishOn > startDate) {
     issues.push('publishes after the rotation starts');

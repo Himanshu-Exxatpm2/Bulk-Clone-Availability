@@ -326,7 +326,7 @@ const baseAvailabilities: Omit<Availability, ListFields>[] = [
     name: 'MedStar ICU - Spring Session #2 2026 (Filled)',
     startDate: '2026-05-15',
     endDate: '2026-07-30',
-    slotCount: 0,
+    slotCount: 4,
     location: 'MedStar Washington Hospital Center – ICU',
     locationGroup: 'MedStar DC Metro',
     discipline: 'Nursing',
@@ -409,9 +409,9 @@ const CREATORS = ['Admin, SingleSite', 'Gajbhiye, Snehal', 'Coordinator, Locatio
 /** Signed-in prototype user; set as Created By on new clones. */
 export const CURRENT_USER_NAME = 'Gajbhiye, Snehal';
 
+/** Today's date in UTC. The platform has no timezone setting and uses UTC everywhere. */
 export function todayISO(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  return new Date().toISOString().slice(0, 10);
 }
 
 function shiftDays(iso: string, days: number): string {

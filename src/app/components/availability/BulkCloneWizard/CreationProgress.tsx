@@ -3,6 +3,7 @@ import { Availability } from '../../../data/mockAvailabilities';
 import { FontAwesomeIcon } from '../../font-awesome-icon';
 import { DraftIssue } from './backendCheck';
 import { IssueList } from './IssueList';
+import { NameChange } from './NameChange';
 
 type RowStatus = 'pending' | 'inprogress' | 'created' | 'draft';
 
@@ -14,7 +15,10 @@ interface CreationResult {
 
 interface CreationProgressProps {
   availabilities: Availability[];
+  /** Names as saved (numbered against the existing list). */
   resolvedNames: Record<string, string>;
+  /** Names the coordinator saw in step 1 (numbered inside the batch only). */
+  stepOneNames: Record<string, string>;
   /** What the backend rejected, per availability; those are saved as drafts. */
   draftIssues: Record<string, DraftIssue[]>;
   onComplete: (results: CreationResult[]) => void;
@@ -25,6 +29,7 @@ const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve,
 export function CreationProgress({
   availabilities,
   resolvedNames,
+  stepOneNames,
   draftIssues,
   onComplete,
 }: CreationProgressProps) {
@@ -140,6 +145,7 @@ export function CreationProgress({
               {/* Name, plus why it was saved as a draft */}
               <div className="flex-1 min-w-0">
                 <span className="block text-sm text-neutral-850 truncate">{name}</span>
+                <NameChange stepOne={stepOneNames[a.id]} saved={name} />
                 {status === 'draft' && draftIssues[a.id] && <IssueList issues={draftIssues[a.id]} />}
               </div>
 

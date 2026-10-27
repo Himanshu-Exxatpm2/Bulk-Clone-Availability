@@ -3,6 +3,7 @@ import { Button } from '../../ui/button';
 import { FontAwesomeIcon } from '../../font-awesome-icon';
 import { DraftIssue } from './backendCheck';
 import { IssueList } from './IssueList';
+import { NameChange } from './NameChange';
 
 interface CreationResult {
   availability: Availability;
@@ -12,7 +13,10 @@ interface CreationResult {
 
 interface CreationSummaryProps {
   results: CreationResult[];
+  /** Names as saved (numbered against the existing list). */
   resolvedNames: Record<string, string>;
+  /** Names the coordinator saw in step 1 (numbered inside the batch only). */
+  stepOneNames: Record<string, string>;
   onDone: () => void;
   onViewDrafts: () => void;
 }
@@ -20,6 +24,7 @@ interface CreationSummaryProps {
 export function CreationSummary({
   results,
   resolvedNames,
+  stepOneNames,
   onDone,
   onViewDrafts,
 }: CreationSummaryProps) {
@@ -43,7 +48,10 @@ export function CreationSummary({
               const name = resolvedNames[r.availability.id] || r.availability.name;
               return (
                 <li key={r.availability.id} className="flex items-center justify-between px-4 py-2.5">
-                  <span className="text-sm text-neutral-850">{name}</span>
+                  <div className="min-w-0">
+                    <span className="text-sm text-neutral-850">{name}</span>
+                    <NameChange stepOne={stepOneNames[r.availability.id]} saved={name} />
+                  </div>
                   <button
                     type="button"
                     className="text-xs text-blue-500 hover:underline flex-shrink-0 ml-4"
@@ -78,6 +86,7 @@ export function CreationSummary({
               return (
                 <li key={r.availability.id} className="px-4 py-2.5">
                   <span className="text-sm text-neutral-850 block">{name}</span>
+                  <NameChange stepOne={stepOneNames[r.availability.id]} saved={name} />
                   {r.issues && <IssueList issues={r.issues} />}
                 </li>
               );
@@ -85,7 +94,7 @@ export function CreationSummary({
           </ul>
           <div className="bg-accent-50 px-4 py-2.5 border-t border-accent-100">
             <p className="text-xs text-warning-default">
-              These were saved as drafts. Open each one, follow the fix above, then publish.
+              These were saved as drafts. Open each one, follow the fix above, then save it. It then goes live as its publish preference says.
             </p>
           </div>
         </div>

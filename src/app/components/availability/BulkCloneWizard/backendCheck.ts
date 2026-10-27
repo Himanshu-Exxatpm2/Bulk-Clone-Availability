@@ -23,7 +23,7 @@ export function simulateBackendCheck(a: Availability): DraftIssue[] {
     const label = FIELD_LABELS[field];
     return {
       problem: `${label} "${a[field]}" is no longer active in the system.`,
-      fix: `Open the draft, choose an active ${label}, then publish.`,
+      fix: `Open the draft, choose an active ${label}, then save it. It then goes live as its publish preference says.`,
     };
   });
 }
