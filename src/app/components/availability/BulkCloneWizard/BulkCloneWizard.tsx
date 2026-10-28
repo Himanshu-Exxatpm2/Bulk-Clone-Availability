@@ -277,7 +277,7 @@ export function BulkCloneWizard({
         side="right"
         onInteractOutside={(e) => e.preventDefault()}
         onEscapeKeyDown={(e) => e.preventDefault()}
-        className="flex h-full w-[min(96vw,980px)] max-w-none flex-col gap-0 bg-neutral-50 p-0 sm:max-w-none [&>button]:hidden"
+        className="flex h-full w-[75vw] max-w-none flex-col gap-0 bg-neutral-50 p-0 sm:max-w-none [&>button]:hidden"
       >
           {/* ── Creation in flight ───────────────────────────────────────── */}
           {wizardState === 'progress' && (
