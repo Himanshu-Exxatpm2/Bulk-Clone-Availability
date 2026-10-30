@@ -7,7 +7,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../../ui/select';
-import { Pencil } from 'lucide-react';
+import { Check, Pencil, X } from 'lucide-react';
 import { FontAwesomeIcon } from '../../font-awesome-icon';
 import {
   TOKENS,
@@ -361,8 +361,24 @@ export function Step1Naming({
                               aria-label={`New name for ${a.name}`}
                               className="h-8 flex-1 min-w-0 rounded-md border border-neutral-300 px-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                             />
-                            <button type="button" onClick={saveEdit} className="text-xs font-medium text-blue-500 hover:underline">Save</button>
-                            <button type="button" onClick={() => setEditingId(null)} className="text-xs text-neutral-600 hover:underline">Cancel</button>
+                            <button
+                              type="button"
+                              onClick={saveEdit}
+                              aria-label="Save name"
+                              title="Save"
+                              className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded text-positive-default hover:bg-positive-default/10"
+                            >
+                              <Check className="h-4 w-4" aria-hidden="true" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setEditingId(null)}
+                              aria-label="Cancel edit"
+                              title="Cancel"
+                              className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded text-neutral-600 hover:bg-neutral-100"
+                            >
+                              <X className="h-4 w-4" aria-hidden="true" />
+                            </button>
                           </div>
                         ) : (
                           <div className="flex items-start gap-2">
@@ -384,10 +400,10 @@ export function Step1Naming({
                               type="button"
                               onClick={() => startEdit(a.id)}
                               aria-label={`Edit new name for ${a.name}`}
-                              className="inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-xs text-blue-500 hover:bg-blue-50"
+                              title="Edit name"
+                              className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-blue-500 hover:bg-blue-50"
                             >
-                              <Pencil className="h-3 w-3" aria-hidden="true" />
-                              Edit
+                              <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
                             </button>
                             {a.id in nameEdits && (
                               <button type="button" onClick={() => resetEdit(a.id)} className="shrink-0 text-xs text-neutral-600 hover:underline">
