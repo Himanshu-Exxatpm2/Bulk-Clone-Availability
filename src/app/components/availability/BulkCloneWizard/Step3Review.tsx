@@ -51,7 +51,7 @@ export function Step3Review({
   // Empty state — all items deleted
   if (availabilities.length === 0) {
     return (
-      <div className="max-w-5xl mx-auto flex flex-col items-center justify-center py-16 gap-3">
+      <div className="flex flex-col items-center justify-center py-16 gap-3">
         <div className="w-12 h-12 rounded-full bg-neutral-100 flex items-center justify-center">
           <FontAwesomeIcon name="circleQuestion" className="w-5 h-5 text-neutral-600" aria-hidden="true" />
         </div>
@@ -67,7 +67,7 @@ export function Step3Review({
   }
 
   return (
-    <div className="max-w-5xl mx-auto space-y-5">
+    <div className="space-y-4">
 
       {/* ── Inherited fields banner ───────────────────────────────────────── */}
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">

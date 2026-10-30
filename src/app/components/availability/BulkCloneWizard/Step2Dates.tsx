@@ -174,7 +174,7 @@ export function Step2Dates({
   const CARD = 'bg-card rounded-xl shadow-[0_1px_1.5px_rgba(0,0,0,0.1),0_1px_1px_rgba(0,0,0,0.1)]';
 
   return (
-    <div className="max-w-5xl mx-auto space-y-5">
+    <div className="space-y-4">
       {/* ── Guidance ─────────────────────────────────────────────────────── */}
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
         <div className="flex items-start gap-2">

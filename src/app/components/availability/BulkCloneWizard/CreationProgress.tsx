@@ -93,7 +93,7 @@ export function CreationProgress({
   const progressPct = total > 0 ? (completedCount / total) * 100 : 0;
 
   return (
-    <div className="max-w-2xl mx-auto space-y-6 pt-4">
+    <div className="space-y-5 pt-2">
 
       {/* ── Progress header ───────────────────────────────────────────────── */}
       <div className="space-y-2">

@@ -7,6 +7,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../../ui/select';
+import { Pencil } from 'lucide-react';
 import { FontAwesomeIcon } from '../../font-awesome-icon';
 import {
   TOKENS,
@@ -25,6 +26,8 @@ export interface Step1Data {
   /** Names before duplicate numbering; the wizard works out final names from these. */
   rawNames: Record<string, string>;
   locationOverrides: Record<string, string>;
+  /** Names typed by hand for one availability; these replace the template result for that row. */
+  nameEdits: Record<string, string>;
 }
 
 // ── Props ─────────────────────────────────────────────────────────────────────
@@ -51,6 +54,10 @@ export function Step1Naming({
   const [locationOverrides, setLocationOverrides] = useState<Record<string, string>>(
     initialData.locationOverrides,
   );
+  const [nameEdits, setNameEdits] = useState<Record<string, string>>(initialData.nameEdits ?? {});
+  // Row being edited by hand, and its draft text
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState('');
   // @ dropdown state
   const [showDropdown, setShowDropdown] = useState(false);
   const [dropdownFilter, setDropdownFilter] = useState('');
@@ -67,9 +74,11 @@ export function Step1Naming({
 
   const rawNames = useMemo(() => {
     const out: Record<string, string> = {};
-    for (const a of availabilities) out[a.id] = resolveName(a, template, locationOverrides);
+    for (const a of availabilities) {
+      out[a.id] = a.id in nameEdits ? nameEdits[a.id] : resolveName(a, template, locationOverrides);
+    }
     return out;
-  }, [availabilities, template, locationOverrides]);
+  }, [availabilities, template, locationOverrides, nameEdits]);
 
   const finalNames = useMemo(
     () => finalizeNames(availabilities, rawNames, existingNames),
@@ -114,8 +123,8 @@ export function Step1Naming({
 
   // Propagate step data to parent whenever anything changes
   useEffect(() => {
-    onDataChangeRef.current({ template, rawNames, locationOverrides });
-  }, [template, rawNames, locationOverrides]);
+    onDataChangeRef.current({ template, rawNames, locationOverrides, nameEdits });
+  }, [template, rawNames, locationOverrides, nameEdits]);
 
   // ── Template mutations ───────────────────────────────────────────────────
 
@@ -165,6 +174,21 @@ export function Step1Naming({
     }
   };
 
+  const startEdit = (id: string) => {
+    setEditingId(id);
+    setEditDraft(rawNames[id] ?? '');
+  };
+  const saveEdit = () => {
+    if (editingId) setNameEdits((prev) => ({ ...prev, [editingId]: editDraft.trim() }));
+    setEditingId(null);
+  };
+  const resetEdit = (id: string) =>
+    setNameEdits((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+
   const dropdownTokens = TOKENS.filter(
     (t) => t.label.toLowerCase().includes(dropdownFilter) || t.token.toLowerCase().includes(dropdownFilter),
   );
@@ -172,7 +196,7 @@ export function Step1Naming({
   // ── Render ───────────────────────────────────────────────────────────────
 
   return (
-    <div className="max-w-5xl mx-auto space-y-5">
+    <div className="space-y-4">
 
       {/* ── Naming guideline ─────────────────────────────────────────────── */}
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-2">
@@ -323,15 +347,55 @@ export function Step1Naming({
                       <span className="text-neutral-600">—</span>
                     ) : (
                       <div>
-                        <div className="leading-relaxed break-words">
-                          {/* The cleaned name, exactly as it will be saved */}
-                          <span className="text-neutral-850">{rawNames[a.id] || '—'}</span>
-                          {final?.suffix && (
-                            <span className="inline-block bg-accent-100 text-warning-default text-xs font-semibold px-1.5 py-0.5 rounded ml-1 align-baseline">
-                              #{final.suffix}
-                            </span>
-                          )}
-                        </div>
+                        {editingId === a.id ? (
+                          <div className="flex items-center gap-1.5">
+                            <input
+                              autoFocus
+                              type="text"
+                              value={editDraft}
+                              onChange={(e) => setEditDraft(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') saveEdit();
+                                if (e.key === 'Escape') setEditingId(null);
+                              }}
+                              aria-label={`New name for ${a.name}`}
+                              className="h-8 flex-1 min-w-0 rounded-md border border-neutral-300 px-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            />
+                            <button type="button" onClick={saveEdit} className="text-xs font-medium text-blue-500 hover:underline">Save</button>
+                            <button type="button" onClick={() => setEditingId(null)} className="text-xs text-neutral-600 hover:underline">Cancel</button>
+                          </div>
+                        ) : (
+                          <div className="flex items-start gap-2">
+                            <div className="flex-1 min-w-0 leading-relaxed break-words">
+                              {/* The cleaned name, exactly as it will be saved */}
+                              <span className="text-neutral-850">{rawNames[a.id] || '—'}</span>
+                              {final?.suffix && (
+                                <span className="inline-block bg-accent-100 text-warning-default text-xs font-semibold px-1.5 py-0.5 rounded ml-1 align-baseline">
+                                  #{final.suffix}
+                                </span>
+                              )}
+                              {a.id in nameEdits && (
+                                <span className="inline-block bg-blue-50 text-blue-600 text-xs font-medium px-1.5 py-0.5 rounded ml-1 align-baseline">
+                                  Edited
+                                </span>
+                              )}
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => startEdit(a.id)}
+                              aria-label={`Edit new name for ${a.name}`}
+                              className="inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-xs text-blue-500 hover:bg-blue-50"
+                            >
+                              <Pencil className="h-3 w-3" aria-hidden="true" />
+                              Edit
+                            </button>
+                            {a.id in nameEdits && (
+                              <button type="button" onClick={() => resetEdit(a.id)} className="shrink-0 text-xs text-neutral-600 hover:underline">
+                                Reset
+                              </button>
+                            )}
+                          </div>
+                        )}
 
                         {/* Location picker for multi-location availabilities; stays so the pick can change */}
                         {showLocPicker && (

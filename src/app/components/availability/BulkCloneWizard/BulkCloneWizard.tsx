@@ -72,7 +72,7 @@ export function BulkCloneWizard({
   // Rows removed in Review stay removed across Back/Next
   const [removedIds, setRemovedIds] = useState<string[]>([]);
 
-  const [step1Data, setStep1Data] = useState<Step1Data>({ template: '', rawNames: {}, locationOverrides: {} });
+  const [step1Data, setStep1Data] = useState<Step1Data>({ template: '', rawNames: {}, locationOverrides: {}, nameEdits: {} });
   const [step1IsValid, setStep1IsValid] = useState(false);
 
   const [step2Data, setStep2Data] = useState<Step2Data>({ mode: 'roll', dates: {} });
@@ -285,7 +285,7 @@ export function BulkCloneWizard({
               {sheetHeader()}
               {stepRow(5 as 1 | 2 | 3 | 4)}
 
-              <div className="flex-1 overflow-y-auto min-h-0 p-4">
+              <div className="flex-1 overflow-y-auto min-h-0 px-3 py-3">
                 <CreationProgress
                   availabilities={activeAvailabilities}
                   resolvedNames={savedNames}
@@ -313,7 +313,7 @@ export function BulkCloneWizard({
               {sheetHeader(() => onCloneComplete(buildCreatedAvailabilities()))}
               {stepRow(5 as 1 | 2 | 3 | 4)}
 
-              <div className="flex-1 overflow-y-auto min-h-0 p-4">
+              <div className="flex-1 overflow-y-auto min-h-0 px-3 py-3">
                 <CreationSummary
                   results={creationResults}
                   resolvedNames={savedNames}
@@ -332,7 +332,7 @@ export function BulkCloneWizard({
               {stepRow(currentStep)}
 
               {/* Scrollable content */}
-              <div className="flex-1 overflow-y-auto min-h-0 p-4">
+              <div className="flex-1 overflow-y-auto min-h-0 px-3 py-3">
                 {currentStep === 1 && (
                   <Step1Naming
                     availabilities={activeAvailabilities}
