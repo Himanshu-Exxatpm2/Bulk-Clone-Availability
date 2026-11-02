@@ -4,7 +4,6 @@ import {
   ChevronDown,
   CalendarDays,
   CirclePlus,
-  History,
   ListChecks,
   Map as MapIcon,
   MapPin,
@@ -428,15 +427,19 @@ export function AvailabilityListPage({ currentPath, onNavigate }: AvailabilityLi
               <p className="text-sm text-neutral-700 leading-5">Manage clinical rotation slots</p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" onClick={() => setHistoryOpen(true)}>
-              <History className="size-4" aria-hidden />
-              Bulk Creation History
-            </Button>
+          {/* As in production: a text link under the primary button */}
+          <div className="flex flex-col items-end gap-1.5">
             <Button onClick={() => console.log('Post Availability')}>
               <FontAwesomeIcon name="plus" className="w-4 h-4" aria-hidden="true" />
               Post Availability
             </Button>
+            <button
+              type="button"
+              onClick={() => setHistoryOpen(true)}
+              className="text-sm font-medium text-blue-600 hover:underline"
+            >
+              Bulk Creation History
+            </button>
           </div>
         </div>
 
