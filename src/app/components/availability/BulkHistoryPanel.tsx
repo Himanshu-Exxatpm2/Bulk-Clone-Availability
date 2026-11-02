@@ -156,7 +156,7 @@ export function BulkHistoryPanel({ entries, cloneCounts, onClose, onViewJob }: B
       <SheetContent
         side="right"
         aria-describedby={undefined}
-        className="flex h-full w-[min(96vw,640px)] max-w-none flex-col gap-0 bg-neutral-50 p-0 sm:max-w-none [&>button]:hidden"
+        className="flex h-full w-[50vw] min-w-[420px] max-w-none flex-col gap-0 bg-neutral-50 p-0 sm:max-w-none [&>button]:hidden"
       >
         <div className="flex shrink-0 items-center gap-2 border-b border-neutral-200 bg-card px-4 py-3">
           <button
