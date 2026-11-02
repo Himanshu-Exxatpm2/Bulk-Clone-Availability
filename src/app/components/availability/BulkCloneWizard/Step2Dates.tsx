@@ -20,7 +20,7 @@ export interface Step2Data {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function rollDateByMonths(iso: string, months: number): string {
+export function rollDateByMonths(iso: string, months: number): string {
   const [y, m, d] = iso.split('-').map(Number);
   const target = new Date(y, m - 1 + months, d);
   // If the day overflowed (e.g. Jan 31 + 1 month → Mar 3), clamp to the last day of the target month

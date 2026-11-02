@@ -2,7 +2,9 @@ import { useState, useMemo, useEffect } from 'react';
 import {
   BookOpen,
   ChevronDown,
+  CalendarDays,
   CirclePlus,
+  History,
   ListChecks,
   Map as MapIcon,
   MapPin,
@@ -38,6 +40,8 @@ import {
   SortState,
 } from './AvailabilityListTable';
 import { BulkCloneWizard } from './BulkCloneWizard';
+import { BulkHistoryPanel } from './BulkHistoryPanel';
+import { HistoryEntry, SEED_HISTORY } from '../../data/bulkHistory';
 import { mockAvailabilities, Availability } from '../../data/mockAvailabilities';
 
 interface AvailabilityListPageProps {
@@ -171,6 +175,69 @@ function FilterButton({
   );
 }
 
+// ── Created On: a date range, added from "Add Filter" ──────────────────────────
+interface DateRange { from: string; to: string }
+const NO_RANGE: DateRange = { from: '', to: '' };
+
+function CreatedOnFilter({
+  range,
+  onChange,
+  onRemove,
+}: {
+  range: DateRange;
+  onChange: (next: DateRange) => void;
+  onRemove: () => void;
+}) {
+  const active = range.from !== '' || range.to !== '';
+  const label = active ? `Created On: ${range.from || '…'} to ${range.to || '…'}` : 'Created On';
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          className={`h-9 gap-2 px-3 font-normal ${
+            active ? 'border-blue-500 bg-blue-50 text-blue-600 hover:bg-blue-50' : 'text-neutral-850'
+          }`}
+          aria-label="Filter by Created On"
+        >
+          <CalendarDays className="size-4" strokeWidth={1.75} aria-hidden />
+          {label}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-72 space-y-3 p-3">
+        <label className="block text-xs text-neutral-700">
+          From
+          <input
+            type="date"
+            value={range.from}
+            max={range.to || undefined}
+            onChange={(e) => onChange({ ...range, from: e.target.value })}
+            className="mt-1 h-9 w-full rounded-md border border-neutral-300 px-2 text-sm text-neutral-900"
+          />
+        </label>
+        <label className="block text-xs text-neutral-700">
+          To
+          <input
+            type="date"
+            value={range.to}
+            min={range.from || undefined}
+            onChange={(e) => onChange({ ...range, to: e.target.value })}
+            className="mt-1 h-9 w-full rounded-md border border-neutral-300 px-2 text-sm text-neutral-900"
+          />
+        </label>
+        <div className="flex items-center justify-between">
+          <button type="button" onClick={() => onChange(NO_RANGE)} disabled={!active} className="text-xs text-blue-600 hover:underline disabled:text-neutral-500 disabled:no-underline">
+            Clear dates
+          </button>
+          <button type="button" onClick={onRemove} className="text-xs text-negative-default hover:underline">
+            Remove filter
+          </button>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 export function AvailabilityListPage({ currentPath, onNavigate }: AvailabilityListPageProps) {
   // Availability list state (seeded from mock; appended by bulk-clone submits)
   const [availabilities, setAvailabilities] = useState<Availability[]>(mockAvailabilities);
@@ -205,12 +272,22 @@ export function AvailabilityListPage({ currentPath, onNavigate }: AvailabilityLi
   const [searchTerm, setSearchTerm] = useState('');
   const [filters, setFilters] = useState<Record<FilterKey, string[]>>(NO_FILTERS);
   const [addedFilters, setAddedFilters] = useState<FilterKey[]>([]);
+  const [createdOnShown, setCreatedOnShown] = useState(false);
+  const [createdRange, setCreatedRange] = useState<DateRange>(NO_RANGE);
   const [sort, setSort] = useState<SortState | null>(null);
   const [hiddenColumns, setHiddenColumns] = useState<ColumnKey[]>([]);
 
   // ── Selection + wizard state ───────────────────────────────────────────────
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [wizardOpen, setWizardOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [history, setHistory] = useState<HistoryEntry[]>(SEED_HISTORY);
+  // Set when the list is opened from a history entry: shows only the clones that job made
+  const [jobFilter, setJobFilter] = useState<string | null>(null);
+
+  // Every job is kept in Bulk Creation History, whatever its outcome; an entry is replaced as it progresses
+  const upsertHistory = (entry: HistoryEntry) =>
+    setHistory((prev) => (prev.some((h) => h.id === entry.id) ? prev.map((h) => (h.id === entry.id ? entry : h)) : [entry, ...prev]));
 
   const tabFiltered = useMemo<Availability[]>(
     () =>
@@ -227,10 +304,13 @@ export function AvailabilityListPage({ currentPath, onNavigate }: AvailabilityLi
     const rows = tabFiltered.filter(
       (a) =>
         (term === '' || searchFieldDef.value(a).toLowerCase().includes(term)) &&
-        matchesFilters(a, filters),
+        (jobFilter === null || a.clonedFrom?.batchId === jobFilter) &&
+        matchesFilters(a, filters) &&
+        (createdRange.from === '' || a.createdOn >= createdRange.from) &&
+        (createdRange.to === '' || a.createdOn <= createdRange.to),
     );
     return sort ? [...rows].sort(compareBy(sort)) : rows;
-  }, [tabFiltered, searchTerm, searchFieldDef, filters, sort]);
+  }, [tabFiltered, searchTerm, searchFieldDef, filters, createdRange, jobFilter, sort]);
 
   // A search or filter change narrows the selection to what's still visible
   useEffect(() => {
@@ -257,6 +337,9 @@ export function AvailabilityListPage({ currentPath, onNavigate }: AvailabilityLi
     setSearchTerm('');
     setFilters(NO_FILTERS);
     setAddedFilters([]);
+    setCreatedOnShown(false);
+    setCreatedRange(NO_RANGE);
+    setJobFilter(null);
     setSort(null);
   };
 
@@ -283,6 +366,13 @@ export function AvailabilityListPage({ currentPath, onNavigate }: AvailabilityLi
 
   const handleBulkClone = () => setWizardOpen(true);
 
+  // How many availabilities each job made, for the "View availabilities" link in history
+  const cloneCounts = useMemo(() => {
+    const out: Record<string, number> = {};
+    for (const a of availabilities) if (a.clonedFrom) out[a.clonedFrom.batchId] = (out[a.clonedFrom.batchId] ?? 0) + 1;
+    return out;
+  }, [availabilities]);
+
   const selectedAvailabilities = useMemo<Availability[]>(
     () => availabilities.filter((a) => selectedIds.includes(a.id)),
     [availabilities, selectedIds],
@@ -291,7 +381,7 @@ export function AvailabilityListPage({ currentPath, onNavigate }: AvailabilityLi
   const shownFilters = [...DEFAULT_FILTERS, ...addedFilters];
   const availableExtras = EXTRA_FILTERS.filter((f) => !addedFilters.includes(f.key));
   const hasActiveFilters =
-    searchTerm !== '' || addedFilters.length > 0 || sort !== null || Object.values(filters).some((v) => v.length > 0);
+    searchTerm !== '' || addedFilters.length > 0 || createdOnShown || jobFilter !== null || sort !== null || Object.values(filters).some((v) => v.length > 0);
 
   return (
     <div className="bg-neutral-50 min-h-full">
@@ -299,13 +389,29 @@ export function AvailabilityListPage({ currentPath, onNavigate }: AvailabilityLi
         <BulkCloneWizard
           availabilities={selectedAvailabilities}
           existingNames={availabilities.map((a) => a.name)}
+          onHistoryChange={upsertHistory}
           // Closing without creating keeps the selection, so the coordinator can reopen it
           onClose={() => setWizardOpen(false)}
-          onCloneComplete={(newOnes) => {
+          onCloneComplete={(newOnes, entry) => {
             // Names were already numbered against the existing list when the clones were created
             if (newOnes.length > 0) setAvailabilities((prev) => [...newOnes, ...prev]);
+            upsertHistory(entry);
             setWizardOpen(false);
             setSelectedIds([]);
+          }}
+        />
+      )}
+
+      {historyOpen && (
+        <BulkHistoryPanel
+          entries={history}
+          cloneCounts={cloneCounts}
+          onClose={() => setHistoryOpen(false)}
+          onViewJob={(id) => {
+            setJobFilter(id);
+            setHistoryOpen(false);
+            setSelectedIds([]);
+            onNavigate(TAB_ROUTES.All);
           }}
         />
       )}
@@ -322,10 +428,16 @@ export function AvailabilityListPage({ currentPath, onNavigate }: AvailabilityLi
               <p className="text-sm text-neutral-700 leading-5">Manage clinical rotation slots</p>
             </div>
           </div>
-          <Button onClick={() => console.log('Post Availability')}>
-            <FontAwesomeIcon name="plus" className="w-4 h-4" aria-hidden="true" />
-            Post Availability
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => setHistoryOpen(true)}>
+              <History className="size-4" aria-hidden />
+              Bulk Creation History
+            </Button>
+            <Button onClick={() => console.log('Post Availability')}>
+              <FontAwesomeIcon name="plus" className="w-4 h-4" aria-hidden="true" />
+              Post Availability
+            </Button>
+          </div>
         </div>
 
         <div className="px-6 mt-4 flex gap-6" role="tablist" aria-label="Availability views">
@@ -413,6 +525,23 @@ export function AvailabilityListPage({ currentPath, onNavigate }: AvailabilityLi
               );
             })}
 
+            {jobFilter !== null && (
+              <span className="inline-flex h-9 items-center gap-2 rounded-md border border-blue-500 bg-blue-50 px-3 text-sm text-blue-600">
+                Clones from one bulk job
+                <button type="button" onClick={() => setJobFilter(null)} aria-label="Show all availabilities" className="hover:text-blue-800">
+                  <X className="size-3.5" aria-hidden />
+                </button>
+              </span>
+            )}
+
+            {createdOnShown && (
+              <CreatedOnFilter
+                range={createdRange}
+                onChange={setCreatedRange}
+                onRemove={() => { setCreatedOnShown(false); setCreatedRange(NO_RANGE); }}
+              />
+            )}
+
             <div className="ml-auto flex items-center gap-2">
               <span className="mr-1 text-sm text-neutral-700">
                 {visibleAvailabilities.length} {visibleAvailabilities.length === 1 ? 'availability' : 'availabilities'}
@@ -422,7 +551,7 @@ export function AvailabilityListPage({ currentPath, onNavigate }: AvailabilityLi
                   <Button
                     variant="outline"
                     className="h-9 gap-2 border-blue-500 px-3 font-medium text-blue-600 hover:bg-blue-50 hover:text-blue-600"
-                    disabled={availableExtras.length === 0}
+                    disabled={availableExtras.length === 0 && createdOnShown}
                   >
                     <CirclePlus className="size-4" strokeWidth={1.75} aria-hidden />
                     Add Filter
@@ -435,6 +564,12 @@ export function AvailabilityListPage({ currentPath, onNavigate }: AvailabilityLi
                       {f.label}
                     </DropdownMenuItem>
                   ))}
+                  {!createdOnShown && (
+                    <DropdownMenuItem onSelect={() => setCreatedOnShown(true)}>
+                      <CalendarDays className="size-4" strokeWidth={1.75} aria-hidden />
+                      Created On
+                    </DropdownMenuItem>
+                  )}
                 </DropdownMenuContent>
               </DropdownMenu>
 

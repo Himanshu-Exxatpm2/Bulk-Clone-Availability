@@ -27,6 +27,8 @@ export interface Availability {
   programTypes: string[];    // Program Type column: full program names
   /** Prototype only: values the backend would reject when the clone is created. */
   retiredValues?: Array<'locationGroup' | 'discipline' | 'programType' | 'experienceType'>;
+  /** Set on an availability created by Bulk Clone; drives the info icon in the list. */
+  clonedFrom?: { batchId: string; sourceName: string; clonedOn: string; clonedBy: string };
 }
 
 type ListFields =
@@ -427,6 +429,13 @@ export function newAvailabilityId(): string {
   return String(nextAvailabilityId);
 }
 
+// A few rows that came from an earlier Bulk Clone, so the info icon can be seen without running one
+const SAMPLE_CLONES: Record<string, Availability['clonedFrom']> = {
+  'avail-005': { batchId: 'h-clone-3', sourceName: 'MedStar PT - Fall Session #1 2023', clonedOn: '2026-10-29', clonedBy: 'Dhameliya, Darp' },
+  'avail-006': { batchId: 'h-clone-3', sourceName: 'MedStar Pharmacy - Spring Session #1 2023', clonedOn: '2026-10-29', clonedBy: 'Dhameliya, Darp' },
+  'avail-011': { batchId: 'h-clone-2', sourceName: 'Hendrick ICU Nursing Rotation 2025', clonedOn: '2026-10-20', clonedBy: 'Parikh, Ruchita' },
+};
+
 export const mockAvailabilities: Availability[] = baseAvailabilities.map((a, i) => {
   const accepting = a.status === 'Published' || a.status === 'Closed';
   const requestedSlots = accepting ? (i * 3) % (a.slotCount + 1) : 0;
@@ -439,5 +448,6 @@ export const mockAvailabilities: Availability[] = baseAvailabilities.map((a, i) 
     requestedSlots,
     specializations: [a.discipline, ...(SPECIALIZATIONS[a.discipline] ?? [])],
     programTypes: PROGRAM_NAMES[a.programType] ?? [a.programType],
+    clonedFrom: SAMPLE_CLONES[a.id],
   };
 });

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ArrowDown, ArrowUp, ChevronsUpDown } from 'lucide-react';
+import { ArrowDown, ArrowUp, ChevronsUpDown, Info } from 'lucide-react';
 import { FontAwesomeIcon } from '../font-awesome-icon';
 import { Button } from '../ui/button';
 import { Checkbox } from '../ui/checkbox';
@@ -233,6 +233,29 @@ function SpecializationCell({ items }: { items: string[] }) {
   );
 }
 
+// Marks an availability that came from Bulk Clone; the hover says where from
+function ClonedMark({ a }: { a: Availability }) {
+  if (!a.clonedFrom) return null;
+  const c = a.clonedFrom;
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span
+          tabIndex={0}
+          role="img"
+          aria-label={`Cloned from ${c.sourceName}`}
+          className="ml-1.5 inline-flex shrink-0 align-middle text-blue-500"
+        >
+          <Info className="size-3.5" aria-hidden />
+        </span>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-xs text-xs">
+        Cloned from “{c.sourceName}” on {formatListDate(c.clonedOn)} by {c.clonedBy}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
 function renderCell(key: ColumnKey, a: Availability) {
   switch (key) {
     case 'availabilityId':
@@ -252,7 +275,12 @@ function renderCell(key: ColumnKey, a: Availability) {
     case 'requestedSlots':
       return <span className="tabular-nums">{a.requestedSlots}</span>;
     case 'createdOn':
-      return <span className="whitespace-nowrap">{formatListDate(a.createdOn)}</span>;
+      return (
+        <span className="inline-flex items-center whitespace-nowrap">
+          {formatListDate(a.createdOn)}
+          <ClonedMark a={a} />
+        </span>
+      );
     case 'duration':
       return (
         <span className="whitespace-nowrap">

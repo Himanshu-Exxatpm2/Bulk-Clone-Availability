@@ -23,18 +23,19 @@ import {
 import { PublishPreferenceCardState, isCardValid } from '../publishPreferenceData';
 import { WizardStepIndicator } from './WizardStepIndicator';
 import { Step1Naming, Step1Data } from './Step1Naming';
-import { Step2Dates, Step2Data } from './Step2Dates';
+import { Step2Dates, Step2Data, rollDateByMonths } from './Step2Dates';
 import { Step3Review } from './Step3Review';
 import { Step4Publish, publishRowIssues } from './Step4Publish';
 import { CreationProgress } from './CreationProgress';
 import { CreationSummary } from './CreationSummary';
 import { finalizeNames } from './naming';
+import { CURRENT_USER_EMAIL, HistoryEntry, describeSource, describeTarget, statusFor } from '../../../data/bulkHistory';
 import { DraftIssue, simulateBackendCheck } from './backendCheck';
 
 interface CreationResult {
   availability: Availability;
   status: 'created' | 'draft';
-  error?: string;
+  issues?: DraftIssue[];
 }
 
 interface Step4Data {
@@ -56,7 +57,10 @@ interface BulkCloneWizardProps {
   /** Every name already in the Availability list; clones may not reuse one. */
   existingNames: string[];
   onClose: () => void;
-  onCloneComplete: (created: Availability[]) => void;
+  /** Called when the coordinator leaves the result screen; carries the clones and the history record of this job. */
+  onCloneComplete: (created: Availability[], historyEntry: HistoryEntry) => void;
+  /** The history record of this job: written as In progress when creation starts, then replaced with the result. */
+  onHistoryChange: (entry: HistoryEntry) => void;
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -66,6 +70,7 @@ export function BulkCloneWizard({
   existingNames,
   onClose,
   onCloneComplete,
+  onHistoryChange,
 }: BulkCloneWizardProps) {
   const [wizardState, setWizardState] = useState<WizardState>('steps');
   const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4>(1);
@@ -85,6 +90,9 @@ export function BulkCloneWizard({
     overrides: {},
   });
   const [creationResults, setCreationResults] = useState<CreationResult[]>([]);
+  // One job: its id links every clone back to its history entry; the time is when creation started
+  const batchIdRef = useRef(`batch-${Date.now()}`);
+  const ranAtRef = useRef<string>(new Date().toISOString());
   const [confirmDiscard, setConfirmDiscard] = useState(false);
 
   const activeAvailabilities = useMemo(
@@ -171,6 +179,9 @@ export function BulkCloneWizard({
     // Names are now also numbered against every availability already in the list
     const saved = finalizeNames(activeAvailabilities, step1Data.rawNames, existingNames);
     setSavedNames(Object.fromEntries(Object.entries(saved).map(([id, f]) => [id, f.name])));
+    ranAtRef.current = new Date().toISOString();
+    // The job is on record from the moment it starts, whether or not the browser stays open
+    onHistoryChange(buildHistoryEntry([], Object.fromEntries(Object.entries(saved).map(([id, f]) => [id, f.name]))));
     setWizardState('progress');
   };
   // Anything that goes live straight away is confirmed first; otherwise creation starts at once
@@ -228,8 +239,55 @@ export function BulkCloneWizard({
         createdOn: today,
         pendingRequests: 0,
         requestedSlots: 0,
+        clonedFrom: {
+          batchId: batchIdRef.current,
+          sourceName: r.availability.name,
+          clonedOn: today,
+          clonedBy: CURRENT_USER_NAME,
+        },
       };
     });
+  }
+
+  // The record kept in Bulk Creation History for this job
+  // `results` is empty while the job is still running
+  function buildHistoryEntry(results: CreationResult[], names: Record<string, string> = savedNames): HistoryEntry {
+    const created = results.filter((r) => r.status === 'created').length;
+    const drafts = results.filter((r) => r.status === 'draft').length;
+    // Rows whose dates were changed by hand after the roll or range was applied
+    const edited = activeAvailabilities.filter((a) => {
+      const d = step2Data.dates[a.id];
+      if (!d) return false;
+      return step2Data.mode === 'custom'
+        ? d.startDate !== step2Data.customStart || d.endDate !== step2Data.customEnd
+        : d.startDate !== rollDateByMonths(a.startDate, step2Data.rollMonths ?? 12) ||
+            d.endDate !== rollDateByMonths(a.endDate, step2Data.rollMonths ?? 12);
+    }).length;
+    return {
+      id: batchIdRef.current,
+      type: 'Bulk Clone',
+      ranAt: ranAtRef.current,
+      runBy: CURRENT_USER_EMAIL,
+      status: results.length < activeAvailabilities.length ? 'In progress' : statusFor(created, drafts, 0),
+      namePattern: step1Data.template.trim(),
+      total: activeAvailabilities.length,
+      created,
+      drafts,
+      failed: 0,
+      source: describeSource(activeAvailabilities),
+      target: describeTarget(
+        step2Data.mode,
+        step2Data.rollMonths,
+        activeAvailabilities.map((a) => step2Data.dates[a.id]).filter(Boolean),
+        edited,
+      ),
+      rows: results.map((r) => ({
+        stepOneName: resolvedNames[r.availability.id] || r.availability.name,
+        savedName: names[r.availability.id] || resolvedNames[r.availability.id] || r.availability.name,
+        status: r.status,
+        problems: r.issues,
+      })),
+    };
   }
 
   // Why Next/Create is disabled, shown in the footer so the reason is never off-screen
@@ -293,6 +351,7 @@ export function BulkCloneWizard({
                   draftIssues={draftIssues}
                   onComplete={(results) => {
                     setCreationResults(results);
+                    onHistoryChange(buildHistoryEntry(results));
                     setWizardState('summary');
                   }}
                 />
@@ -310,7 +369,7 @@ export function BulkCloneWizard({
           {/* ── Summary ──────────────────────────────────────────────────── */}
           {wizardState === 'summary' && (
             <>
-              {sheetHeader(() => onCloneComplete(buildCreatedAvailabilities()))}
+              {sheetHeader(() => onCloneComplete(buildCreatedAvailabilities(), buildHistoryEntry(creationResults)))}
               {stepRow(5 as 1 | 2 | 3 | 4)}
 
               <div className="flex-1 overflow-y-auto min-h-0 px-3 py-3">
@@ -318,8 +377,8 @@ export function BulkCloneWizard({
                   results={creationResults}
                   resolvedNames={savedNames}
                   stepOneNames={resolvedNames}
-                  onDone={() => onCloneComplete(buildCreatedAvailabilities())}
-                  onViewDrafts={() => onCloneComplete(buildCreatedAvailabilities())}
+                  onDone={() => onCloneComplete(buildCreatedAvailabilities(), buildHistoryEntry(creationResults))}
+                  onViewDrafts={() => onCloneComplete(buildCreatedAvailabilities(), buildHistoryEntry(creationResults))}
                 />
               </div>
             </>
