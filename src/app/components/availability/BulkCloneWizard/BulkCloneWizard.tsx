@@ -20,10 +20,10 @@ import {
   newAvailabilityId,
   todayISO,
 } from '../../../data/mockAvailabilities';
-import { PublishPreferenceCardState, isCardValid } from '../publishPreferenceData';
+import { PublishPreferenceCardState, isCardValid, makeEmptyCard, statusForPreferences } from '../publishPreferenceData';
 import { WizardStepIndicator } from './WizardStepIndicator';
 import { Step1Naming, Step1Data } from './Step1Naming';
-import { Step2Dates, Step2Data, rollDateByMonths } from './Step2Dates';
+import { Step2Dates, Step2Data } from './Step2Dates';
 import { Step3Review } from './Step3Review';
 import { Step4Publish, publishRowIssues } from './Step4Publish';
 import { CreationProgress } from './CreationProgress';
@@ -39,16 +39,15 @@ interface CreationResult {
 }
 
 interface Step4Data {
-  publishMode: 'all' | 'individual';
-  defaultPreference: PublishPreferenceCardState | null;
-  overrides: Record<string, PublishPreferenceCardState>; // keyed by availability id
+  /** Every clone gets all of these; there is no per-availability setting */
+  preferences: PublishPreferenceCardState[];
 }
 
 type WizardState = 'steps' | 'progress' | 'summary';
 
 // Step order: 1 Naming, 2 Dates, 3 Review, 4 Publish.
 // Nothing stops the batch up front: an availability with a data problem is still
-// cloned, saved as a draft, and the reason is shown when the clones are created.
+// cloned, saved as unpublished, and the reason is shown when the clones are created.
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
@@ -77,18 +76,14 @@ export function BulkCloneWizard({
   // Rows removed in Review stay removed across Back/Next
   const [removedIds, setRemovedIds] = useState<string[]>([]);
 
-  const [step1Data, setStep1Data] = useState<Step1Data>({ template: '', rawNames: {}, locationOverrides: {}, nameEdits: {} });
+  const [step1Data, setStep1Data] = useState<Step1Data>({ template: '', rawNames: {}, locationOverrides: {} });
   const [step1IsValid, setStep1IsValid] = useState(false);
 
   const [step2Data, setStep2Data] = useState<Step2Data>({ mode: 'roll', dates: {} });
   const [step2IsValid, setStep2IsValid] = useState(false);
   const firstDatesRef = useRef<string | null>(null);
 
-  const [step4Data, setStep4Data] = useState<Step4Data>({
-    publishMode: 'all',
-    defaultPreference: null,
-    overrides: {},
-  });
+  const [step4Data, setStep4Data] = useState<Step4Data>(() => ({ preferences: [makeEmptyCard()] }));
   const [creationResults, setCreationResults] = useState<CreationResult[]>([]);
   // One job: its id links every clone back to its history entry; the time is when creation started
   const batchIdRef = useRef(`batch-${Date.now()}`);
@@ -137,33 +132,19 @@ export function BulkCloneWizard({
     }
   };
 
-  const publishIssues = publishRowIssues(
-    activeAvailabilities,
-    step2Data.dates,
-    step4Data.publishMode,
-    step4Data.defaultPreference,
-    step4Data.overrides,
-  );
+  const publishIssues = publishRowIssues(activeAvailabilities, step2Data.dates, step4Data.preferences);
   const step4Valid =
-    !!step4Data.defaultPreference &&
-    isCardValid(step4Data.defaultPreference) &&
-    !(
-      step4Data.publishMode === 'individual' &&
-      Object.entries(step4Data.overrides).some(([id, o]) => activeAvailabilities.some((a) => a.id === id) && !isCardValid(o))
-    ) &&
+    step4Data.preferences.length > 0 &&
+    step4Data.preferences.every(isCardValid) &&
     Object.keys(publishIssues).length === 0;
 
   // Clones that go live as soon as they are created, grouped by who sees them
   const goLiveNow = (() => {
     const today = todayISO();
     const byAudience = new Map<string, number>();
-    for (const a of activeAvailabilities) {
-      const pref =
-        step4Data.publishMode === 'individual' && step4Data.overrides[a.id]
-          ? step4Data.overrides[a.id]
-          : step4Data.defaultPreference;
-      const live = pref?.publishWhen === 'Now' || (pref?.publishWhen === 'Scheduled' && pref.publishOn <= today);
-      if (live && pref?.whoSees) byAudience.set(pref.whoSees, (byAudience.get(pref.whoSees) ?? 0) + 1);
+    for (const pref of step4Data.preferences) {
+      const live = pref.publishWhen === 'Now' || (pref.publishWhen === 'Scheduled' && pref.publishOn <= today);
+      if (live && pref.whoSees) byAudience.set(pref.whoSees, (byAudience.get(pref.whoSees) ?? 0) + activeAvailabilities.length);
     }
     return [...byAudience.entries()];
   })();
@@ -208,31 +189,33 @@ export function BulkCloneWizard({
       (firstDatesRef.current !== null && firstDatesRef.current !== JSON.stringify(step2Data.dates)));
   const requestClose = () => (isDirty ? setConfirmDiscard(true) : onClose());
 
+  // One stable id per clone, shared by the Availability list and this job's history entry
+  const cloneIdFor = (sourceId: string) => `clone-${batchIdRef.current}-${sourceId}`;
+
   function buildCreatedAvailabilities(): Availability[] {
     const today = todayISO();
     return creationResults.map((r) => {
-      // Use per-availability override if set; otherwise fall back to default
-      const pref =
-        step4Data.publishMode === 'individual' && step4Data.overrides[r.availability.id]
-          ? step4Data.overrides[r.availability.id]
-          : step4Data.defaultPreference;
-
-      // Scheduled for today is published straight away
-      const derivedStatus: AvailabilityStatus =
-        pref?.publishWhen === 'Scheduled'      ? (pref.publishOn > today ? 'Scheduled' : 'Published') :
-        pref?.publishWhen === 'Do Not Publish' ? 'Draft' :
-        'Published'; // 'Now' or fallback
+      // Published once any audience can see it today; otherwise Unpublished
+      const derivedStatus: AvailabilityStatus = statusForPreferences(step4Data.preferences);
+      // The last date schools can request is the latest due date among the preferences
+      const dueDates = step4Data.preferences.filter((p) => p.publishWhen !== 'Do Not Publish' && p.dueDate).map((p) => p.dueDate);
 
       return {
         ...r.availability,
-        id: `clone-${Date.now()}-${newAvailabilityId()}`,
+        id: cloneIdFor(r.availability.id),
         name: savedNames[r.availability.id] || resolvedNames[r.availability.id] || r.availability.name,
         startDate:
           step2Data.dates[r.availability.id]?.startDate ?? r.availability.startDate,
         endDate:
           step2Data.dates[r.availability.id]?.endDate ?? r.availability.endDate,
-        status: r.status === 'draft' ? 'Draft' : derivedStatus,
-        dueDate: pref?.publishWhen !== 'Do Not Publish' ? pref?.dueDate || undefined : undefined,
+        status: r.status === 'draft' ? 'Unpublished' : derivedStatus,
+        dueDate: dueDates.length > 0 ? dueDates.sort()[dueDates.length - 1] : undefined,
+        publishOptions: step4Data.preferences.map((p) => ({
+          whoSees: p.whoSees ?? '',
+          publishWhen: p.publishWhen ?? '',
+          publishOn: p.publishWhen === 'Now' ? today : p.publishOn,
+          dueDate: p.dueDate,
+        })),
         // A clone is a new record: its own ID and creation stamp, no requests yet
         availabilityId: newAvailabilityId(),
         createdBy: CURRENT_USER_NAME,
@@ -254,15 +237,6 @@ export function BulkCloneWizard({
   function buildHistoryEntry(results: CreationResult[], names: Record<string, string> = savedNames): HistoryEntry {
     const created = results.filter((r) => r.status === 'created').length;
     const drafts = results.filter((r) => r.status === 'draft').length;
-    // Rows whose dates were changed by hand after the roll or range was applied
-    const edited = activeAvailabilities.filter((a) => {
-      const d = step2Data.dates[a.id];
-      if (!d) return false;
-      return step2Data.mode === 'custom'
-        ? d.startDate !== step2Data.customStart || d.endDate !== step2Data.customEnd
-        : d.startDate !== rollDateByMonths(a.startDate, step2Data.rollMonths ?? 12) ||
-            d.endDate !== rollDateByMonths(a.endDate, step2Data.rollMonths ?? 12);
-    }).length;
     return {
       id: batchIdRef.current,
       type: 'Bulk Clone',
@@ -279,9 +253,9 @@ export function BulkCloneWizard({
         step2Data.mode,
         step2Data.rollMonths,
         activeAvailabilities.map((a) => step2Data.dates[a.id]).filter(Boolean),
-        edited,
       ),
       rows: results.map((r) => ({
+        availabilityId: cloneIdFor(r.availability.id),
         stepOneName: resolvedNames[r.availability.id] || r.availability.name,
         savedName: names[r.availability.id] || resolvedNames[r.availability.id] || r.availability.name,
         status: r.status,
@@ -377,8 +351,8 @@ export function BulkCloneWizard({
                   results={creationResults}
                   resolvedNames={savedNames}
                   stepOneNames={resolvedNames}
+                  preferences={step4Data.preferences}
                   onDone={() => onCloneComplete(buildCreatedAvailabilities(), buildHistoryEntry(creationResults))}
-                  onViewDrafts={() => onCloneComplete(buildCreatedAvailabilities(), buildHistoryEntry(creationResults))}
                 />
               </div>
             </>
@@ -424,12 +398,8 @@ export function BulkCloneWizard({
                     availabilities={activeAvailabilities}
                     resolvedNames={resolvedNames}
                     dates={step2Data.dates}
-                    initialMode={step4Data.publishMode}
-                    initialDefaultPreference={step4Data.defaultPreference}
-                    initialOverrides={step4Data.overrides}
-                    onDataChange={(mode, defaultPref, overrides) =>
-                      setStep4Data({ publishMode: mode, defaultPreference: defaultPref, overrides })
-                    }
+                    initialPreferences={step4Data.preferences}
+                    onDataChange={(preferences) => setStep4Data({ preferences })}
                   />
                 )}
               </div>

@@ -7,8 +7,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../../ui/select';
-import { Check, Pencil, X } from 'lucide-react';
 import { FontAwesomeIcon } from '../../font-awesome-icon';
+import { TablePager, usePaging } from './TablePager';
 import {
   TOKENS,
   TOKEN_TO_FIELD,
@@ -26,8 +26,6 @@ export interface Step1Data {
   /** Names before duplicate numbering; the wizard works out final names from these. */
   rawNames: Record<string, string>;
   locationOverrides: Record<string, string>;
-  /** Names typed by hand for one availability; these replace the template result for that row. */
-  nameEdits: Record<string, string>;
 }
 
 // ── Props ─────────────────────────────────────────────────────────────────────
@@ -54,10 +52,6 @@ export function Step1Naming({
   const [locationOverrides, setLocationOverrides] = useState<Record<string, string>>(
     initialData.locationOverrides,
   );
-  const [nameEdits, setNameEdits] = useState<Record<string, string>>(initialData.nameEdits ?? {});
-  // Row being edited by hand, and its draft text
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editDraft, setEditDraft] = useState('');
   // @ dropdown state
   const [showDropdown, setShowDropdown] = useState(false);
   const [dropdownFilter, setDropdownFilter] = useState('');
@@ -75,10 +69,10 @@ export function Step1Naming({
   const rawNames = useMemo(() => {
     const out: Record<string, string> = {};
     for (const a of availabilities) {
-      out[a.id] = a.id in nameEdits ? nameEdits[a.id] : resolveName(a, template, locationOverrides);
+      out[a.id] = resolveName(a, template, locationOverrides);
     }
     return out;
-  }, [availabilities, template, locationOverrides, nameEdits]);
+  }, [availabilities, template, locationOverrides]);
 
   const finalNames = useMemo(
     () => finalizeNames(availabilities, rawNames, existingNames),
@@ -123,8 +117,8 @@ export function Step1Naming({
 
   // Propagate step data to parent whenever anything changes
   useEffect(() => {
-    onDataChangeRef.current({ template, rawNames, locationOverrides, nameEdits });
-  }, [template, rawNames, locationOverrides, nameEdits]);
+    onDataChangeRef.current({ template, rawNames, locationOverrides });
+  }, [template, rawNames, locationOverrides]);
 
   // ── Template mutations ───────────────────────────────────────────────────
 
@@ -174,20 +168,13 @@ export function Step1Naming({
     }
   };
 
-  const startEdit = (id: string) => {
-    setEditingId(id);
-    setEditDraft(rawNames[id] ?? '');
-  };
-  const saveEdit = () => {
-    if (editingId) setNameEdits((prev) => ({ ...prev, [editingId]: editDraft.trim() }));
-    setEditingId(null);
-  };
-  const resetEdit = (id: string) =>
-    setNameEdits((prev) => {
-      const next = { ...prev };
-      delete next[id];
-      return next;
-    });
+  const rowsWithErrors = availabilities.filter((a) => rowChecks[a.id].errors.length > 0).length;
+  // Preview table paging; the checks above still run on every row, not just the page shown
+  const { pageRows, pager } = usePaging(availabilities);
+
+  // Rows that need no number are unique; rows that get "#2", "#3"… are duplicates of another name in the batch
+  const duplicateCount = hasTemplate ? availabilities.filter((a) => finalNames[a.id]?.suffix).length : 0;
+  const uniqueCount = availabilities.length - duplicateCount;
 
   const dropdownTokens = TOKENS.filter(
     (t) => t.label.toLowerCase().includes(dropdownFilter) || t.token.toLowerCase().includes(dropdownFilter),
@@ -308,9 +295,23 @@ export function Step1Naming({
       <div className="bg-card rounded-xl shadow-[0_1px_1.5px_rgba(0,0,0,0.1),0_1px_1px_rgba(0,0,0,0.1)] overflow-hidden">
         <div className="bg-neutral-50 border-b border-neutral-200 px-4 py-2.5 flex items-center justify-between">
           <h3 className="text-sm font-semibold text-neutral-800">Name Preview</h3>
-          <span className="text-xs text-neutral-600">
-            {availabilities.length} availabilit{availabilities.length !== 1 ? 'ies' : 'y'}
-          </span>
+          <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1 text-xs text-neutral-600">
+            <span>{availabilities.length} availabilit{availabilities.length !== 1 ? 'ies' : 'y'}</span>
+            {hasTemplate && unknown.length === 0 && (
+              <>
+                <span className="font-medium text-positive-default">{uniqueCount} unique</span>
+                <span
+                  className={duplicateCount > 0 ? 'font-medium text-warning-default' : ''}
+                  title="Same name as another clone in this batch; a number (#2, #3…) is added"
+                >
+                  {duplicateCount} duplicate
+                </span>
+                {rowsWithErrors > 0 && (
+                  <span className="font-medium text-negative-default">{rowsWithErrors} need fixing</span>
+                )}
+              </>
+            )}
+          </div>
         </div>
 
         <table className="w-full border-collapse">
@@ -328,7 +329,7 @@ export function Step1Naming({
             </tr>
           </thead>
           <tbody>
-            {availabilities.map((a, idx) => {
+            {pageRows.map((a, idx) => {
               const locs = parseLocations(a.location);
               const showLocPicker = locs.length > 1 && locationInTemplate;
               const final = finalNames[a.id];
@@ -347,71 +348,15 @@ export function Step1Naming({
                       <span className="text-neutral-600">—</span>
                     ) : (
                       <div>
-                        {editingId === a.id ? (
-                          <div className="flex items-center gap-1.5">
-                            <input
-                              autoFocus
-                              type="text"
-                              value={editDraft}
-                              onChange={(e) => setEditDraft(e.target.value)}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') saveEdit();
-                                if (e.key === 'Escape') setEditingId(null);
-                              }}
-                              aria-label={`New name for ${a.name}`}
-                              className="h-8 flex-1 min-w-0 rounded-md border border-neutral-300 px-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            />
-                            <button
-                              type="button"
-                              onClick={saveEdit}
-                              aria-label="Save name"
-                              title="Save"
-                              className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded text-positive-default hover:bg-positive-default/10"
-                            >
-                              <Check className="h-4 w-4" aria-hidden="true" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setEditingId(null)}
-                              aria-label="Cancel edit"
-                              title="Cancel"
-                              className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded text-neutral-600 hover:bg-neutral-100"
-                            >
-                              <X className="h-4 w-4" aria-hidden="true" />
-                            </button>
-                          </div>
-                        ) : (
-                          <div className="flex items-start gap-2">
-                            <div className="flex-1 min-w-0 leading-relaxed break-words">
-                              {/* The cleaned name, exactly as it will be saved */}
-                              <span className="text-neutral-850">{rawNames[a.id] || '—'}</span>
-                              {final?.suffix && (
-                                <span className="inline-block bg-accent-100 text-warning-default text-xs font-semibold px-1.5 py-0.5 rounded ml-1 align-baseline">
-                                  #{final.suffix}
-                                </span>
-                              )}
-                              {a.id in nameEdits && (
-                                <span className="inline-block bg-blue-50 text-blue-600 text-xs font-medium px-1.5 py-0.5 rounded ml-1 align-baseline">
-                                  Edited
-                                </span>
-                              )}
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => startEdit(a.id)}
-                              aria-label={`Edit new name for ${a.name}`}
-                              title="Edit name"
-                              className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-blue-500 hover:bg-blue-50"
-                            >
-                              <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
-                            </button>
-                            {a.id in nameEdits && (
-                              <button type="button" onClick={() => resetEdit(a.id)} className="shrink-0 text-xs text-neutral-600 hover:underline">
-                                Reset
-                              </button>
-                            )}
-                          </div>
-                        )}
+                        <div className="leading-relaxed break-words">
+                          {/* The cleaned name, exactly as it will be saved */}
+                          <span className="text-neutral-850">{rawNames[a.id] || '—'}</span>
+                          {final?.suffix && (
+                            <span className="inline-block bg-accent-100 text-warning-default text-xs font-semibold px-1.5 py-0.5 rounded ml-1 align-baseline">
+                              #{final.suffix}
+                            </span>
+                          )}
+                        </div>
 
                         {/* Location picker for multi-location availabilities; stays so the pick can change */}
                         {showLocPicker && (
@@ -467,6 +412,8 @@ export function Step1Naming({
             })}
           </tbody>
         </table>
+
+        <TablePager {...pager} />
       </div>
     </div>
   );

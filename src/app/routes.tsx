@@ -21,6 +21,8 @@ import { SchoolDashboard } from './screens/school/SchoolDashboard';
 import { PlaceholderPage } from './screens/PlaceholderPage';
 import { JobsPage } from './components/JobsPage';
 import { AvailabilityListPage } from './components/availability/AvailabilityListPage';
+import { AvailabilityDetailPage } from './components/availability/AvailabilityDetailPage';
+import { AvailabilityProvider } from './data/AvailabilityContext';
 import type { ProductKind } from './data/session';
 
 // NOTE: The "Network Layer" (consortium) surfaces were a parallel project and are
@@ -45,7 +47,9 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
 function RootLayout() {
   return (
     <SessionProvider>
-      <Outlet />
+      <AvailabilityProvider>
+        <Outlet />
+      </AvailabilityProvider>
     </SessionProvider>
   );
 }
@@ -122,6 +126,7 @@ export const router = createAppRouter([
           { path: 'personnel', element: <PlaceholderPage title="Personnel" /> },
           { path: 'partners', element: <PlaceholderPage title="School Partners" /> },
           { path: 'availability/*', element: <AvailabilityPageAdapter /> },
+          { path: 'internships/:availabilityId', element: <AvailabilityDetailPage /> },
           { path: 'slot-requests', element: <PlaceholderPage title="Slot Requests" /> },
           { path: 'schedules', element: <PlaceholderPage title="Schedules" /> },
           { path: 'reports', element: <PlaceholderPage title="Reports" /> },

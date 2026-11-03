@@ -106,3 +106,45 @@ export function summarizeCard(card: PublishPreferenceCardState): string {
   const when = card.publishWhen ?? 'Unset';
   return `${who} — ${when}`;
 }
+
+/** The day a preference makes the availability visible to its audience; '' while not chosen or not published. */
+function effectivePublishDate(card: PublishPreferenceCardState): string {
+  if (card.publishWhen === 'Now') return todayISODate();
+  if (card.publishWhen === 'Scheduled') return card.publishOn;
+  return '';
+}
+
+/**
+ * Early access only works if partners see the availability before the public does.
+ * A partner preference published on or after the Public one gets a note (not a block),
+ * keyed by card id. Worded as in production.
+ */
+export function publicOverlapWarnings(cards: PublishPreferenceCardState[]): Record<string, string> {
+  const out: Record<string, string> = {};
+  const publics = cards.filter((c) => c.whoSees === 'Public' && effectivePublishDate(c));
+  if (publics.length === 0) return out;
+  const earliestPublic = publics.reduce((a, b) => (effectivePublishDate(a) <= effectivePublishDate(b) ? a : b));
+  const publicDate = effectivePublishDate(earliestPublic);
+  for (const c of cards) {
+    if (c.whoSees !== 'All Partners' && c.whoSees !== 'Tiered Partners') continue;
+    const date = effectivePublishDate(c);
+    if (date && date >= publicDate) {
+      out[c.cardId] =
+        earliestPublic.publishWhen === 'Now'
+          ? "This will be published for Public, so partners won't get early access"
+          : 'Dates overlap with Public Publish';
+    }
+  }
+  return out;
+}
+
+/**
+ * Status a clone starts with when it carries several preferences: Published as soon as any
+ * audience can see it today, otherwise Unpublished (all still to come, or none will publish).
+ */
+export function statusForPreferences(cards: PublishPreferenceCardState[]): 'Published' | 'Unpublished' {
+  const today = todayISODate();
+  const publishing = cards.filter((c) => c.publishWhen && c.publishWhen !== 'Do Not Publish');
+  if (publishing.length === 0) return 'Unpublished';
+  return publishing.some((c) => c.publishWhen === 'Now' || c.publishOn <= today) ? 'Published' : 'Unpublished';
+}

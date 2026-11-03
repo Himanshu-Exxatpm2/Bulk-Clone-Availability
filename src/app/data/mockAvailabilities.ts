@@ -1,5 +1,5 @@
-// Published = accepting requests; Scheduled = publish date is in the future (Publish When = "Scheduled"); Draft = "Do Not Publish" was chosen, not yet visible; Closed = no longer accepting requests.
-export type AvailabilityStatus = 'Published' | 'Scheduled' | 'Draft' | 'Closed';
+// The platform has three statuses. Published = accepting requests; Unpublished = not visible yet (publish date in the future, Do Not Publish, or saved with a problem to fix); Closed = no longer accepting requests.
+export type AvailabilityStatus = 'Published' | 'Unpublished' | 'Closed';
 export type ExperienceType = 'Group' | 'Individual';
 export type Tenant = 'MedStar' | 'ATI' | 'Hendrick';
 
@@ -29,6 +29,8 @@ export interface Availability {
   retiredValues?: Array<'locationGroup' | 'discipline' | 'programType' | 'experienceType'>;
   /** Set on an availability created by Bulk Clone; drives the info icon in the list. */
   clonedFrom?: { batchId: string; sourceName: string; clonedOn: string; clonedBy: string };
+  /** Publish Options shown on the availability page; set on clones, derived for the rest */
+  publishOptions?: Array<{ whoSees: string; publishWhen: string; publishOn: string; dueDate: string }>;
 }
 
 type ListFields =
@@ -429,25 +431,73 @@ export function newAvailabilityId(): string {
   return String(nextAvailabilityId);
 }
 
-// A few rows that came from an earlier Bulk Clone, so the info icon can be seen without running one
-const SAMPLE_CLONES: Record<string, Availability['clonedFrom']> = {
-  'avail-005': { batchId: 'h-clone-3', sourceName: 'MedStar PT - Fall Session #1 2023', clonedOn: '2026-10-29', clonedBy: 'Dhameliya, Darp' },
-  'avail-006': { batchId: 'h-clone-3', sourceName: 'MedStar Pharmacy - Spring Session #1 2023', clonedOn: '2026-10-29', clonedBy: 'Dhameliya, Darp' },
-  'avail-011': { batchId: 'h-clone-2', sourceName: 'Hendrick ICU Nursing Rotation 2025', clonedOn: '2026-10-20', clonedBy: 'Parikh, Ruchita' },
-};
+// Prototype only: 100 more rows built from the records above, so the list runs to
+// several pages and "select all across all pages" has something to work on. Fully
+// deterministic; the two flagged demo drafts (retired values) are not repeated.
+const generatedAvailabilities: Omit<Availability, ListFields>[] = (() => {
+  const templates = baseAvailabilities.filter((a) => !a.retiredValues);
+  return Array.from({ length: 100 }, (_, n) => {
+    const t = templates[n % templates.length];
+    const round = Math.floor(n / templates.length);
+    const shift = 120 + round * 150 + (n % 5) * 7;
+    return {
+      ...t,
+      id: `avail-g${String(n + 1).padStart(3, '0')}`,
+      name: `${t.name} - Cohort ${n + 1}`,
+      startDate: shiftDays(t.startDate, shift),
+      endDate: shiftDays(t.endDate, shift),
+      dueDate: undefined,
+      status: t.status === 'Unpublished' ? 'Published' : t.status,
+    };
+  });
+})();
 
-export const mockAvailabilities: Availability[] = baseAvailabilities.map((a, i) => {
+// The clones recorded in the two earlier Bulk Clone jobs in Bulk Creation History (ids match the
+// rows there), so a job's availabilities can be opened from its history entry.
+const seedClones: Omit<Availability, ListFields>[] = (() => {
+  const tpl = (id: string) => baseAvailabilities.find((a) => a.id === id)!;
+  const clone = (
+    id: string,
+    from: string,
+    name: string,
+    batchId: string,
+    clonedOn: string,
+    clonedBy: string,
+    sourceName: string,
+    startDate: string,
+    endDate: string,
+    status: AvailabilityStatus,
+  ): Omit<Availability, ListFields> => ({
+    ...tpl(from),
+    id,
+    name,
+    startDate,
+    endDate,
+    status,
+    clonedFrom: { batchId, sourceName, clonedOn, clonedBy },
+  });
+  return [
+    clone('seed-h3-1', 'avail-001', 'MedStar ICU - Nursing - Spring 2027', 'h-clone-3', '2026-10-29', 'Dhameliya, Darp', 'MedStar ICU - Spring Session #1 2025', '2027-01-04', '2027-03-19', 'Published'),
+    clone('seed-h3-2', 'avail-004', 'MedStar NICU - Nursing - Spring 2027', 'h-clone-3', '2026-10-29', 'Dhameliya, Darp', 'MedStar NICU - Fall Session #1 2025', '2027-01-04', '2027-03-19', 'Published'),
+    clone('seed-h3-3', 'avail-006', 'MedStar Legacy Rehab - Physical Therapy - Spring 2027', 'h-clone-3', '2026-10-29', 'Dhameliya, Darp', 'MedStar Legacy Rehab - Physical Therapy - Spring 2026', '2027-01-04', '2027-03-19', 'Unpublished'),
+    clone('seed-h2-1', 'avail-011', 'Hendrick ICU - BSN - Fall 2026', 'h-clone-2', '2026-10-20', 'Parikh, Ruchita', 'Hendrick ICU Nursing Rotation 2025', '2026-09-08', '2026-12-18', 'Published'),
+    clone('seed-h2-2', 'avail-011', 'Hendrick ICU - BSN - Fall 2026 #2', 'h-clone-2', '2026-10-20', 'Parikh, Ruchita', 'Hendrick ICU Nursing Rotation 2025', '2026-09-08', '2026-12-18', 'Published'),
+  ];
+})();
+
+export const mockAvailabilities: Availability[] = [...baseAvailabilities, ...generatedAvailabilities, ...seedClones].map((a, i) => {
   const accepting = a.status === 'Published' || a.status === 'Closed';
-  const requestedSlots = accepting ? (i * 3) % (a.slotCount + 1) : 0;
+  // A clone is new: no requests yet
+  const requestedSlots = accepting && !a.clonedFrom ? (i * 3) % (a.slotCount + 1) : 0;
   return {
     ...a,
     availabilityId: String(2687923895 + i * 35021143),
     createdBy: CREATORS[i % CREATORS.length],
-    createdOn: shiftDays(a.startDate, -90 - (i % 4) * 7),
+    // A clone was created the day its Bulk Clone job ran
+    createdOn: a.clonedFrom ? a.clonedFrom.clonedOn : shiftDays(a.startDate, -90 - (i % 4) * 7),
     pendingRequests: a.status === 'Published' ? Math.min(requestedSlots, (i * 2) % 3) : 0,
     requestedSlots,
     specializations: [a.discipline, ...(SPECIALIZATIONS[a.discipline] ?? [])],
     programTypes: PROGRAM_NAMES[a.programType] ?? [a.programType],
-    clonedFrom: SAMPLE_CLONES[a.id],
   };
 });

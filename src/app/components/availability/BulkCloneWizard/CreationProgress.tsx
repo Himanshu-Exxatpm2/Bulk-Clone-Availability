@@ -19,7 +19,7 @@ interface CreationProgressProps {
   resolvedNames: Record<string, string>;
   /** Names the coordinator saw in step 1 (numbered inside the batch only). */
   stepOneNames: Record<string, string>;
-  /** What the backend rejected, per availability; those are saved as drafts. */
+  /** What the backend rejected, per availability; those are saved as Unpublished. */
   draftIssues: Record<string, DraftIssue[]>;
   onComplete: (results: CreationResult[]) => void;
 }
@@ -135,14 +135,14 @@ export function CreationProgress({
                 {status === 'draft' && (
                   <span
                     className="inline-flex w-4 h-4 items-center justify-center rounded-full bg-accent-100 text-warning-default text-xs font-bold leading-none"
-                    aria-label="Saved as draft"
+                    aria-label="Saved as unpublished"
                   >
                     !
                   </span>
                 )}
               </div>
 
-              {/* Name, plus why it was saved as a draft */}
+              {/* Name, plus why it was saved as unpublished */}
               <div className="flex-1 min-w-0">
                 <span className="block text-sm text-neutral-850 truncate">{name}</span>
                 <NameChange stepOne={stepOneNames[a.id]} saved={name} />
@@ -162,7 +162,7 @@ export function CreationProgress({
                 {status === 'pending'    && 'Waiting…'}
                 {status === 'inprogress' && 'Creating…'}
                 {status === 'created'    && 'Created'}
-                {status === 'draft'      && 'Saved as draft'}
+                {status === 'draft'      && 'Saved as unpublished'}
               </span>
             </div>
           );

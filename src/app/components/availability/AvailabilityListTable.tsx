@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ArrowDown, ArrowUp, ChevronsUpDown, Info } from 'lucide-react';
+import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, ChevronsUpDown, Info } from 'lucide-react';
 import { FontAwesomeIcon } from '../font-awesome-icon';
 import { Button } from '../ui/button';
 import { Checkbox } from '../ui/checkbox';
@@ -53,10 +53,17 @@ interface AvailabilityListTableProps {
   availabilities: Availability[];
   totalCount: number;
   selectedIds: string[];
+  allPagesSelected: boolean;
+  page: number;
+  pageSize: number;
+  onPageChange: (page: number) => void;
+  onPageSizeChange: (size: number) => void;
   hiddenColumns: ColumnKey[];
   sort: SortState | null;
   onSortChange: (sort: SortState | null) => void;
-  onSelectAll: (checked: boolean) => void;
+  onSelectPage: (checked: boolean) => void;
+  onSelectAllPages: () => void;
+  onClearAll: () => void;
   onSelectOne: (id: string, checked: boolean) => void;
   onBulkClone: () => void;
 }
@@ -71,11 +78,10 @@ export function formatListDate(iso: string): string {
   });
 }
 
-const STATUS_CLASSES: Record<Availability['status'], string> = {
+export const STATUS_CLASSES: Record<Availability['status'], string> = {
   Published: 'bg-positive-default/25 text-neutral-900',
-  Scheduled: 'bg-accent-100 text-neutral-900',
-  Draft:     'bg-neutral-100 text-neutral-800',
-  Closed:    'bg-neutral-200 text-neutral-800',
+  Unpublished: 'bg-neutral-100 text-neutral-800',
+  Closed:      'bg-neutral-200 text-neutral-800',
 };
 
 function StatusBadge({ status }: { status: Availability['status'] }) {
@@ -92,42 +98,54 @@ function StatusBadge({ status }: { status: Availability['status'] }) {
         Status reflects whether this availability accepts new slot requests — it's
         independent of the Upcoming/Current/Completed tab, which is based on rotation
         dates only. A Closed availability can still appear under Current or Upcoming
-        if its dates haven't elapsed. Scheduled means the publish date is in the future;
-        Draft means it hasn't been published yet.
+        if its dates haven't elapsed. Unpublished means it isn't visible to schools yet.
       </TooltipContent>
     </Tooltip>
   );
 }
 
-// Hard cap on a single bulk-clone batch (decided Oct 2026). A soft advisory is
-// shown from ADVISORY_THRESHOLD selections upward.
-export const MAX_CLONE_SELECTION = 25;
-export const ADVISORY_THRESHOLD = 15;
+// No cap on a batch (decided Oct 2026). A soft advisory shows once the selection
+// goes past ADVISORY_THRESHOLD.
+export const ADVISORY_THRESHOLD = 100;
 
 // ── Selection bar ────────────────────────────────────────────────────────────
 // The list itself is unchanged; the only additions are the checkboxes and this bar.
 // • 0 selected → nothing is shown
 // • 1 selected → count, a disabled Clone action and a hint (the row copy icon clones one availability)
 // • ≥2 selected → enabled "Clone N Availabilities"
-// • ≥15 selected → dismissible advisory; 25 is the hard cap
+// • >100 selected → dismissible advisory; there is no maximum
+// • Page fully ticked → offer "select all across all pages"; once taken, individual
+//   ticking is locked until Clear all (same as production)
 function SelectionToolbar({
   selectedCount,
+  totalCount,
+  pageRowCount,
+  pageFullySelected,
+  allPagesSelected,
+  onSelectAllPages,
+  onClearAll,
   onBulkClone,
 }: {
   selectedCount: number;
+  totalCount: number;
+  pageRowCount: number;
+  pageFullySelected: boolean;
+  allPagesSelected: boolean;
+  onSelectAllPages: () => void;
+  onClearAll: () => void;
   onBulkClone: () => void;
 }) {
   const [advisoryDismissed, setAdvisoryDismissed] = useState(false);
-  const atCap = selectedCount >= MAX_CLONE_SELECTION;
-  const showAdvisory = selectedCount >= ADVISORY_THRESHOLD && !advisoryDismissed;
+  const showAdvisory = selectedCount > ADVISORY_THRESHOLD && !advisoryDismissed;
   if (selectedCount === 0) return null;
+
+  const BANNER = 'flex items-center gap-2 px-4 py-2 border-t border-neutral-200 bg-blue-50 text-sm text-neutral-800';
+  const LINK = 'text-blue-600 underline underline-offset-2 hover:text-blue-700';
 
   return (
     <div className="border-b border-neutral-200 bg-neutral-50">
       <div className="flex items-center justify-between gap-4 px-4 py-2 min-h-[48px]">
-        <span className="text-sm text-neutral-800">
-          {`${selectedCount} selected${atCap ? ` (maximum ${MAX_CLONE_SELECTION})` : ''}`}
-        </span>
+        <span className="text-sm text-neutral-800">{`${selectedCount} selected`}</span>
 
         <div className="flex items-center gap-3">
           {selectedCount === 1 && (
@@ -139,6 +157,28 @@ function SelectionToolbar({
           </Button>
         </div>
       </div>
+
+      {allPagesSelected ? (
+        <div role="status" className={BANNER}>
+          <span className="flex-1">
+            {`You've selected all ${totalCount} availabilities across all pages. Individual selection is now disabled. To make the changes, use the clear all button.`}
+          </span>
+          <button type="button" onClick={onClearAll} className={`${LINK} shrink-0`}>
+            Clear all
+          </button>
+        </div>
+      ) : (
+        pageFullySelected && (
+          <div role="status" className={BANNER}>
+            <span>
+              {`All ${pageRowCount} availabilities on this page are selected. `}
+              <button type="button" onClick={onSelectAllPages} className={LINK}>
+                {`Select all ${totalCount} availabilities across all pages`}
+              </button>
+            </span>
+          </div>
+        )
+      )}
 
       {showAdvisory && (
         <div
@@ -300,10 +340,17 @@ export function AvailabilityListTable({
   availabilities,
   totalCount,
   selectedIds,
+  allPagesSelected,
+  page,
+  pageSize,
+  onPageChange,
+  onPageSizeChange,
   hiddenColumns,
   sort,
   onSortChange,
-  onSelectAll,
+  onSelectPage,
+  onSelectAllPages,
+  onClearAll,
   onSelectOne,
   onBulkClone,
 }: AvailabilityListTableProps) {
@@ -311,21 +358,27 @@ export function AvailabilityListTable({
   const tableWidth =
     CHECK_W + NAME_W + STATUS_W + ACTIONS_W + columns.reduce((sum, c) => sum + c.width, 0);
 
-  // Tri-state header checkbox; a click while anything is selected clears the selection,
-  // so it can't get stuck when the cap leaves some rows unselected
-  const allChecked =
-    availabilities.length > 0 && selectedIds.length === availabilities.length;
-  const someChecked = selectedIds.length > 0 && !allChecked;
-  const selectAllChecked: true | false | 'indeterminate' = allChecked
+  // Header checkbox is tri-state for the rows on this page; selection kept from other pages doesn't count
+  const selectedSet = new Set(selectedIds);
+  const pageSelected = availabilities.filter((a) => selectedSet.has(a.id)).length;
+  const pageFullySelected = availabilities.length > 0 && pageSelected === availabilities.length;
+  const selectAllChecked: true | false | 'indeterminate' = pageFullySelected
     ? true
-    : someChecked
+    : pageSelected > 0
     ? 'indeterminate'
     : false;
+  const pageCount = Math.max(1, Math.ceil(totalCount / pageSize));
 
   return (
     <div>
       <SelectionToolbar
         selectedCount={selectedIds.length}
+        totalCount={totalCount}
+        pageRowCount={availabilities.length}
+        pageFullySelected={pageFullySelected}
+        allPagesSelected={allPagesSelected}
+        onSelectAllPages={onSelectAllPages}
+        onClearAll={onClearAll}
         onBulkClone={onBulkClone}
       />
 
@@ -353,7 +406,8 @@ export function AvailabilityListTable({
                 <div className="inline-flex items-center justify-center">
                   <Checkbox
                     checked={selectAllChecked}
-                    onCheckedChange={() => onSelectAll(selectedIds.length === 0)}
+                    disabled={allPagesSelected}
+                    onCheckedChange={() => onSelectPage(!pageFullySelected)}
                     aria-label="Select all availabilities"
                   />
                 </div>
@@ -387,11 +441,10 @@ export function AvailabilityListTable({
             ) : (
               availabilities.map((avail) => {
                 const isSelected = selectedIds.includes(avail.id);
-                const capped = !isSelected && selectedIds.length >= MAX_CLONE_SELECTION;
                 const box = (
                   <Checkbox
                     checked={isSelected}
-                    disabled={capped}
+                    disabled={allPagesSelected}
                     onCheckedChange={(checked) => onSelectOne(avail.id, checked as boolean)}
                     aria-label={`Select ${avail.name}`}
                   />
@@ -400,18 +453,7 @@ export function AvailabilityListTable({
                   <tr key={avail.id} className="group">
                     <td className={`${TD} sticky left-0 z-[1] !px-0 text-center`}>
                       <div className="inline-flex items-center justify-center">
-                        {capped ? (
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <span className="inline-flex">{box}</span>
-                            </TooltipTrigger>
-                            <TooltipContent side="right" className="text-xs">
-                              Maximum {MAX_CLONE_SELECTION} selections reached.
-                            </TooltipContent>
-                          </Tooltip>
-                        ) : (
-                          box
-                        )}
+                        {box}
                       </div>
                     </td>
 
@@ -468,6 +510,31 @@ export function AvailabilityListTable({
             )}
           </tbody>
         </table>
+      </div>
+
+      {/* Footer: rows per page and page controls, as in production */}
+      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-neutral-200 px-4 py-3 text-sm text-neutral-800">
+        <label className="flex items-center gap-2">
+          Rows per page
+          <select
+            value={pageSize}
+            onChange={(e) => onPageSizeChange(Number(e.target.value))}
+            className="h-8 rounded-md border border-neutral-300 bg-card px-2 text-sm"
+          >
+            {[10, 25, 50].map((n) => (
+              <option key={n} value={n}>{n}</option>
+            ))}
+          </select>
+        </label>
+        <div className="flex items-center gap-2">
+          <span>{`Page ${page} of ${pageCount} (${totalCount} items)`}</span>
+          <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="Previous page" disabled={page <= 1} onClick={() => onPageChange(page - 1)}>
+            <ChevronLeft className="size-4" aria-hidden />
+          </Button>
+          <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="Next page" disabled={page >= pageCount} onClick={() => onPageChange(page + 1)}>
+            <ChevronRight className="size-4" aria-hidden />
+          </Button>
+        </div>
       </div>
     </div>
   );

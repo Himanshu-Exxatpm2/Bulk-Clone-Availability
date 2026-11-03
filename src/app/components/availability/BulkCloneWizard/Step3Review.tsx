@@ -1,5 +1,6 @@
 import { Availability } from '../../../data/mockAvailabilities';
 import { FontAwesomeIcon } from '../../font-awesome-icon';
+import { TablePager, usePaging } from './TablePager';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -47,6 +48,7 @@ export function Step3Review({
   onDelete,
   onRestoreAll,
 }: Step3ReviewProps) {
+  const { pageRows, pager } = usePaging(availabilities);
 
   // Empty state — all items deleted
   if (availabilities.length === 0) {
@@ -140,7 +142,7 @@ export function Step3Review({
               </tr>
             </thead>
             <tbody>
-              {availabilities.map((a, idx) => {
+              {pageRows.map((a, idx) => {
                 const newName = resolvedNames[a.id] || a.name;
                 const d = dates[a.id] ?? { startDate: '', endDate: '' };
                 const isEven = idx % 2 === 0;
@@ -187,6 +189,7 @@ export function Step3Review({
             </tbody>
           </table>
         </div>
+        <TablePager {...pager} />
       </div>
     </div>
   );

@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { Availability, todayISO } from '../../../data/mockAvailabilities';
-import { Button } from '../../ui/button';
 import { FontAwesomeIcon } from '../../font-awesome-icon';
 import { DateField } from '../DateField';
+import { TablePager, usePaging } from './TablePager';
 
 // ── Exported types ─────────────────────────────────────────────────────────────
 
@@ -124,10 +124,6 @@ export function Step2Dates({
 
   // ── Mutations ─────────────────────────────────────────────────────────────
 
-  const updateDate = (id: string, field: 'startDate' | 'endDate', value: string) => {
-    setDates((prev) => ({ ...prev, [id]: { ...prev[id], [field]: value } }));
-  };
-
   const handleRollMonthsChange = (months: RollMonths) => {
     setRollMonths(months);
     setDates(rolledDates(availabilities, months));
@@ -156,16 +152,8 @@ export function Step2Dates({
     }
   };
 
-  const handleReset = () => {
-    if (mode === 'roll') {
-      setDates(rolledDates(availabilities, rollMonths));
-    } else if (customRangeValid) {
-      setDates(uniformDates(availabilities, customStart, customEnd));
-    }
-  };
-
-  const resetDisabled = mode === 'custom' && !customRangeValid;
   const awaitingCustomRange = mode === 'custom' && !customRangeValid;
+  const { pageRows, pager } = usePaging(availabilities);
   const rollLabel = rollMonths === 12 ? '1 year' : `${rollMonths} months`;
 
 
@@ -190,9 +178,6 @@ export function Step2Dates({
               <strong>6 months</strong> or <strong>1 year</strong> from the original rotation window. Feb 29 dates
               are clamped to Feb 28 in non-leap years. <strong>Custom Date</strong> lets you pick one start and one
               end date that is applied to every availability in the batch.
-            </p>
-            <p className="text-xs text-blue-700 leading-relaxed font-medium">
-              Either way, you can still edit any row below by clicking into its date field.
             </p>
           </div>
         </div>
@@ -262,7 +247,7 @@ export function Step2Dates({
               })}
             </div>
             <p className="text-xs text-neutral-600 mt-2">
-              Choosing a different option recalculates all dates. Any rows you've already edited manually will reset.
+              Choosing a different option recalculates all dates.
             </p>
           </div>
         )}
@@ -301,7 +286,7 @@ export function Step2Dates({
               <p className="text-xs text-neutral-600 mt-2">
                 {awaitingCustomRange
                   ? `Choose a start and end date to apply to all ${availabilities.length} availabilities.`
-                  : `Applied to all ${availabilities.length} availabilities. Picking new dates replaces any row edits.`}
+                  : `Applied to all ${availabilities.length} availabilities.`}
               </p>
             )}
           </div>
@@ -310,25 +295,13 @@ export function Step2Dates({
 
       {/* ── Date preview table ───────────────────────────────────────────── */}
       <div className={`${CARD} overflow-hidden`}>
-        <div className="bg-neutral-50 border-b border-neutral-200 px-4 py-2.5 flex items-center justify-between gap-4">
-          <div>
-            <h3 className="text-sm font-semibold text-neutral-800">Date Preview</h3>
-            <p className="text-xs text-neutral-700 mt-0.5">
-              {mode === 'roll'
-                ? `Dates are pre-filled by rolling the original dates forward by ${rollLabel}. Edit any row to override.`
-                : 'Dates come from your custom range. Edit any row to override.'}
-            </p>
-          </div>
-          <Button
-            variant="outline"
-            size="sm"
-            className="text-xs shrink-0"
-            onClick={handleReset}
-            disabled={resetDisabled}
-          >
-            <FontAwesomeIcon name="arrowRotateLeft" className="w-3 h-3" aria-hidden="true" />
-            {mode === 'roll' ? 'Reset Dates' : 'Re-apply Range'}
-          </Button>
+        <div className="bg-neutral-50 border-b border-neutral-200 px-4 py-2.5">
+          <h3 className="text-sm font-semibold text-neutral-800">Date Preview</h3>
+          <p className="text-xs text-neutral-700 mt-0.5">
+            {mode === 'roll'
+              ? `Original dates rolled forward by ${rollLabel}.`
+              : 'Every availability gets your custom start and end dates.'}
+          </p>
         </div>
 
         <table className="w-full border-collapse">
@@ -349,13 +322,8 @@ export function Step2Dates({
             </tr>
           </thead>
           <tbody>
-            {availabilities.map((a, idx) => {
+            {pageRows.map((a, idx) => {
               const row = dates[a.id] ?? { startDate: '', endDate: '' };
-              const startEmpty = !row.startDate;
-              const endEmpty = !row.endDate;
-              const dateOrderErr = !!row.startDate && !!row.endDate && row.startDate > row.endDate;
-              // In custom mode, don't flag rows red before a range has been chosen
-              const showEmptyErr = !awaitingCustomRange;
               const isEven = idx % 2 === 0;
 
               return (
@@ -373,36 +341,19 @@ export function Step2Dates({
                     <span className="block">{formatDate(a.endDate)}</span>
                   </td>
 
-                  <td className="px-4 py-3 border-b border-neutral-100 align-top">
-                    <div className={(showEmptyErr && startEmpty) || dateOrderErr ? 'ring-1 ring-negative-default rounded-md' : ''}>
-                      <DateField
-                        value={row.startDate}
-                        onChange={(v) => updateDate(a.id, 'startDate', v)}
-                        placeholder="Start date"
-                        ariaLabel={`New start date for ${a.name}`}
-                      />
-                    </div>
+                  <td className="px-4 py-3 border-b border-neutral-100 align-top text-sm text-neutral-850">
+                    {formatDate(row.startDate)}
                   </td>
 
-                  <td className="px-4 py-3 border-b border-neutral-100 align-top">
-                    <div className={(showEmptyErr && endEmpty) || dateOrderErr ? 'ring-1 ring-negative-default rounded-md' : ''}>
-                      <DateField
-                        value={row.endDate}
-                        minDate={row.startDate || undefined}
-                        onChange={(v) => updateDate(a.id, 'endDate', v)}
-                        placeholder="End date"
-                        ariaLabel={`New end date for ${a.name}`}
-                      />
-                    </div>
-                    {dateOrderErr && (
-                      <p className="text-xs text-negative-default mt-1">Start must be before end</p>
-                    )}
+                  <td className="px-4 py-3 border-b border-neutral-100 align-top text-sm text-neutral-850">
+                    {formatDate(row.endDate)}
                   </td>
                 </tr>
               );
             })}
           </tbody>
         </table>
+        <TablePager {...pager} />
       </div>
     </div>
   );

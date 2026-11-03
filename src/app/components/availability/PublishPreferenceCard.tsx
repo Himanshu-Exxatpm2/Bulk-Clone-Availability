@@ -162,15 +162,20 @@ export interface PublishPreferenceCardProps {
   canDelete: boolean;
   onChange: (next: PublishPreferenceCardState) => void;
   onDelete: () => void;
+  /** Non-blocking note shown under the dates, e.g. an overlap with a Public preference */
+  warning?: string;
 }
 
-export function PublishPreferenceCard({ card, index, canDelete, onChange, onDelete }: PublishPreferenceCardProps) {
+export function PublishPreferenceCard({ card, index, canDelete, onChange, onDelete, warning }: PublishPreferenceCardProps) {
   const [tierModalOpen, setTierModalOpen] = useState(false);
 
   const handleWhoSeesChange = (whoSees: WhoSees) => {
+    // Changing who sees it starts the rest of the card over, as in production
+    const changed = whoSees !== card.whoSees;
     onChange({
       ...card,
       whoSees,
+      ...(changed ? { publishWhen: undefined, publishOn: '', dueDate: '' } : {}),
       selectedTierIds: whoSees === 'Tiered Partners' ? card.selectedTierIds : [],
       tierDates: whoSees === 'Tiered Partners' ? card.tierDates : [],
     });
@@ -184,6 +189,8 @@ export function PublishPreferenceCard({ card, index, canDelete, onChange, onDele
     onChange({
       ...card,
       publishWhen,
+      // Scheduled starts on today's date, as in production; the coordinator moves it from there
+      publishOn: publishWhen === 'Scheduled' && !card.publishOn ? todayISODate() : card.publishOn,
       tierDates: publishWhen === 'Scheduled' ? card.tierDates : [],
     });
   };
@@ -194,24 +201,8 @@ export function PublishPreferenceCard({ card, index, canDelete, onChange, onDele
   const hasTierDates = card.tierDates.some((t) => t.publishOn || t.dueDate);
 
   return (
-    <div className="border border-neutral-200 rounded-lg p-4 bg-white relative">
-      {canDelete && (
-        <Button
-          variant="ghost"
-          size="icon"
-          className="absolute top-3 right-3 h-7 w-7 hover:bg-negative-default/10 hover:text-negative-default"
-          onClick={onDelete}
-          aria-label={`Remove publish preference ${index + 1}`}
-        >
-          <FontAwesomeIcon name="trash" className="w-3.5 h-3.5" />
-        </Button>
-      )}
-
-      <p className="text-xs font-semibold uppercase tracking-wide text-neutral-600 mb-3">
-        Preference {index + 1}
-      </p>
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+    <div className="border border-neutral-200 rounded-lg p-4 bg-white" data-preference-index={index}>
+      <div className="grid grid-cols-1 gap-4">
         <div>
           <label className="block text-sm font-medium text-neutral-800 mb-1.5">
             Who sees this availability? *
@@ -224,6 +215,7 @@ export function PublishPreferenceCard({ card, index, canDelete, onChange, onDele
           />
         </div>
 
+        {card.whoSees && (
         <div>
           <label className="block text-sm font-medium text-neutral-800 mb-1.5">Publish When *</label>
           <Select value={card.publishWhen} onValueChange={(v) => handlePublishWhenChange(v as PublishWhen)}>
@@ -237,10 +229,11 @@ export function PublishPreferenceCard({ card, index, canDelete, onChange, onDele
             </SelectContent>
           </Select>
         </div>
+        )}
       </div>
 
       {(showPublishOnField || showDueDateField) && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
+        <div className="grid grid-cols-1 gap-4 mt-4">
           {showPublishOnField && (
             <div>
               <label className="block text-sm font-medium text-neutral-800 mb-1.5">Publish on *</label>
@@ -293,6 +286,12 @@ export function PublishPreferenceCard({ card, index, canDelete, onChange, onDele
         </div>
       )}
 
+      {warning && (
+        <p role="alert" className="mt-3 text-xs" style={{ color: 'var(--color-negative-default)' }}>
+          {warning}
+        </p>
+      )}
+
       {card.whoSees === 'Tiered Partners' && hasTierDates && (
         <Collapsible className="mt-4 border-t border-neutral-100 pt-3">
           <CollapsibleTrigger className="flex items-center gap-2 text-sm font-medium text-neutral-800 group">
@@ -318,6 +317,21 @@ export function PublishPreferenceCard({ card, index, canDelete, onChange, onDele
           </CollapsibleContent>
         </Collapsible>
       )}
+
+      <div className="mt-4 flex justify-end">
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-7 text-xs text-blue-600 hover:bg-blue-50 disabled:text-neutral-400"
+          disabled={!canDelete}
+          onClick={onDelete}
+          aria-label={`Remove publish preference ${index + 1}`}
+        >
+          <FontAwesomeIcon name="trash" className="w-3.5 h-3.5 mr-1.5" aria-hidden="true" />
+          Remove
+        </Button>
+      </div>
     </div>
   );
 }

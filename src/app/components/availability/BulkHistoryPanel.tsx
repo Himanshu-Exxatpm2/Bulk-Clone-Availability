@@ -1,9 +1,12 @@
 import { useMemo, useState } from 'react';
-import { ArrowLeft, SlidersHorizontal, X } from 'lucide-react';
+import { ArrowLeft, Search, SlidersHorizontal, X } from 'lucide-react';
 import { Sheet, SheetContent, SheetTitle } from '../ui/sheet';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
-import { HistoryEntry, HistoryStatus } from '../../data/bulkHistory';
+import { HistoryEntry, HistoryRow, HistoryStatus } from '../../data/bulkHistory';
+import { Availability } from '../../data/mockAvailabilities';
+import { STATUS_CLASSES } from './AvailabilityListTable';
+import { TablePager, usePaging } from './BulkCloneWizard/TablePager';
 import { IssueList } from './BulkCloneWizard/IssueList';
 import { NameChange } from './BulkCloneWizard/NameChange';
 
@@ -14,6 +17,10 @@ interface BulkHistoryPanelProps {
   onClose: () => void;
   /** Close the panel and show only the availabilities this job made */
   onViewJob: (id: string) => void;
+  /** Every availability in the list, to show each job row's current status */
+  availabilities: Availability[];
+  /** Open one availability's page */
+  onOpenAvailability: (id: string) => void;
 }
 
 const PAGE_SIZE = 10;
@@ -41,16 +48,197 @@ function StatusPill({ status }: { status: HistoryStatus }) {
 function results(e: HistoryEntry): string {
   if (e.status === 'In progress') return `Creating ${e.total} availabilities…`;
   const parts = [`${e.created} created`];
-  if (e.drafts > 0) parts.push(`${e.drafts} saved as draft`);
+  if (e.drafts > 0) parts.push(`${e.drafts} saved as unpublished`);
   if (e.failed > 0) parts.push(`${e.failed} failed`);
   return parts.join(' · ');
 }
 
 const count = (n: number) => `${n} ${n === 1 ? 'Availability' : 'Availabilities'}`;
 
+// ── The availabilities one job made ─────────────────────────────────────────
+// Searchable and filterable by status or result; a name opens that availability's page.
+
+type RowStatus = Availability['status'] | 'Not created';
+const RESULT_LABEL: Record<HistoryRow['status'], string> = {
+  created: 'Created',
+  draft: 'Saved as unpublished',
+  failed: 'Failed',
+};
+
+function JobAvailabilities({
+  rows,
+  availabilities,
+  onOpen,
+}: {
+  rows: HistoryRow[];
+  availabilities: Availability[];
+  onOpen: (id: string) => void;
+}) {
+  const [term, setTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState<string>(ALL);
+  const [resultFilter, setResultFilter] = useState<string>(ALL);
+  const [discipline, setDiscipline] = useState<string>(ALL);
+  const [program, setProgram] = useState<string>(ALL);
+  const [location, setLocation] = useState<string>(ALL);
+
+  const byId = useMemo(() => new Map(availabilities.map((a) => [a.id, a])), [availabilities]);
+  // The record behind a row, and its status today (it can change after the job)
+  const withStatus = useMemo(
+    () =>
+      rows.map((r) => {
+        const rec = r.availabilityId ? byId.get(r.availabilityId) : undefined;
+        return { row: r, rec, status: (rec ? rec.status : 'Not created') as RowStatus };
+      }),
+    [rows, byId],
+  );
+  // Discipline, program and location choices come from the records this job made
+  const options = useMemo(() => {
+    const recs = withStatus.map((x) => x.rec).filter((r): r is Availability => !!r);
+    const uniq = (xs: string[]) => Array.from(new Set(xs)).sort();
+    return {
+      discipline: uniq(recs.map((r) => r.discipline)),
+      program: uniq(recs.flatMap((r) => r.programTypes)),
+      location: uniq(recs.map((r) => r.location)),
+    };
+  }, [withStatus]);
+  const shown = withStatus.filter(
+    ({ row, rec, status }) =>
+      (term.trim() === '' || row.savedName.toLowerCase().includes(term.trim().toLowerCase())) &&
+      (statusFilter === ALL || status === statusFilter) &&
+      (resultFilter === ALL || row.status === resultFilter) &&
+      (discipline === ALL || rec?.discipline === discipline) &&
+      (program === ALL || !!rec?.programTypes.includes(program)) &&
+      (location === ALL || rec?.location === location),
+  );
+  const { pageRows, pager } = usePaging(shown);
+  const filtered =
+    term.trim() !== '' || statusFilter !== ALL || resultFilter !== ALL || discipline !== ALL || program !== ALL || location !== ALL;
+
+  return (
+    <div className="overflow-hidden rounded-lg border border-neutral-200 bg-card">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-neutral-200 px-4 py-2.5">
+        <p className="text-sm font-semibold text-neutral-900">Availabilities in this job</p>
+        <p className="text-xs text-neutral-600">{filtered ? `${shown.length} of ${rows.length} shown` : `${rows.length} availabilities`}</p>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2 border-b border-neutral-100 px-4 py-2.5">
+        <label className="relative min-w-[180px] flex-1">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-neutral-500" aria-hidden />
+          <input
+            type="search"
+            value={term}
+            onChange={(e) => setTerm(e.target.value)}
+            placeholder="Search by availability name"
+            aria-label="Search availabilities in this job"
+            className="h-9 w-full rounded-md border border-neutral-300 bg-card pl-8 pr-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </label>
+        <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <SelectTrigger size="sm" className="h-9 w-[150px] bg-card" aria-label="Filter by status">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={ALL}>All statuses</SelectItem>
+            <SelectItem value="Published">Published</SelectItem>
+            <SelectItem value="Unpublished">Unpublished</SelectItem>
+            <SelectItem value="Closed">Closed</SelectItem>
+            <SelectItem value="Not created">Not created</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={resultFilter} onValueChange={setResultFilter}>
+          <SelectTrigger size="sm" className="h-9 w-[190px] bg-card" aria-label="Filter by result">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={ALL}>All results</SelectItem>
+            <SelectItem value="created">Created</SelectItem>
+            <SelectItem value="draft">Saved as unpublished</SelectItem>
+            <SelectItem value="failed">Failed</SelectItem>
+          </SelectContent>
+        </Select>
+        {([
+          { label: 'Discipline', all: 'All disciplines', value: discipline, set: setDiscipline, opts: options.discipline },
+          { label: 'Program', all: 'All programs', value: program, set: setProgram, opts: options.program },
+          { label: 'Location', all: 'All locations', value: location, set: setLocation, opts: options.location },
+        ] as const).map((f) => (
+          <Select key={f.label} value={f.value} onValueChange={f.set}>
+            <SelectTrigger size="sm" className="h-9 w-[170px] bg-card" aria-label={`Filter by ${f.label.toLowerCase()}`}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL}>{f.all}</SelectItem>
+              {f.opts.map((o) => (
+                <SelectItem key={o} value={o}>{o}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ))}
+        {filtered && (
+          <button
+            type="button"
+            onClick={() => { setTerm(''); setStatusFilter(ALL); setResultFilter(ALL); setDiscipline(ALL); setProgram(ALL); setLocation(ALL); }}
+            className="text-xs text-neutral-700 hover:underline"
+          >
+            Clear
+          </button>
+        )}
+      </div>
+
+      {pageRows.length === 0 ? (
+        <p className="px-4 py-8 text-center text-sm text-neutral-600">No availabilities match.</p>
+      ) : (
+        <ul className="divide-y divide-neutral-100">
+          {pageRows.map(({ row: r, rec, status }) => (
+            <li key={r.availabilityId ?? r.savedName} className="px-4 py-2.5">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  {rec ? (
+                    <button
+                      type="button"
+                      onClick={() => onOpen(rec.id)}
+                      className="break-words text-left text-sm font-medium text-blue-600 hover:underline"
+                    >
+                      {r.savedName}
+                    </button>
+                  ) : (
+                    <p className="break-words text-sm text-neutral-850">{r.savedName}</p>
+                  )}
+                  <NameChange stepOne={r.stepOneName} saved={r.savedName} />
+                  {r.status === 'failed' && <p className="mt-0.5 text-xs text-negative-default">{RESULT_LABEL[r.status]}</p>}
+                </div>
+                <span
+                  className={`inline-flex shrink-0 rounded px-2.5 py-0.5 text-xs font-medium ${
+                    status === 'Not created' ? 'bg-negative-default/10 text-negative-default' : STATUS_CLASSES[status]
+                  }`}
+                >
+                  {status}
+                </span>
+              </div>
+              {r.problems && <IssueList issues={r.problems} />}
+            </li>
+          ))}
+        </ul>
+      )}
+      {shown.length > 10 && <TablePager {...pager} />}
+    </div>
+  );
+}
+
 // ── Detail view ──────────────────────────────────────────────────────────────
 
-function EntryDetail({ entry, cloned, onViewJob }: { entry: HistoryEntry; cloned: number; onViewJob: () => void }) {
+function EntryDetail({
+  entry,
+  cloned,
+  onViewJob,
+  availabilities,
+  onOpenAvailability,
+}: {
+  entry: HistoryEntry;
+  cloned: number;
+  onViewJob: () => void;
+  availabilities: Availability[];
+  onOpenAvailability: (id: string) => void;
+}) {
   const line = (label: string, value: React.ReactNode) => (
     <p className="text-sm text-neutral-700">
       {label} <span className="font-semibold text-neutral-900">{value}</span>
@@ -80,31 +268,7 @@ function EntryDetail({ entry, cloned, onViewJob }: { entry: HistoryEntry; cloned
       </div>
 
       {entry.rows ? (
-        <div className="overflow-hidden rounded-lg border border-neutral-200 bg-card">
-          <p className="border-b border-neutral-200 px-4 py-2.5 text-sm font-semibold text-neutral-900">
-            Availabilities in this job
-          </p>
-          <ul className="divide-y divide-neutral-100">
-            {entry.rows.map((r) => (
-              <li key={r.savedName} className="px-4 py-2.5">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="break-words text-sm text-neutral-850">{r.savedName}</p>
-                    <NameChange stepOne={r.stepOneName} saved={r.savedName} />
-                  </div>
-                  <span
-                    className={`shrink-0 text-xs font-medium ${
-                      r.status === 'created' ? 'text-positive-default' : r.status === 'draft' ? 'text-warning-default' : 'text-negative-default'
-                    }`}
-                  >
-                    {r.status === 'created' ? 'Created' : r.status === 'draft' ? 'Saved as draft' : 'Failed'}
-                  </span>
-                </div>
-                {r.problems && <IssueList issues={r.problems} />}
-              </li>
-            ))}
-          </ul>
-        </div>
+        <JobAvailabilities rows={entry.rows} availabilities={availabilities} onOpen={onOpenAvailability} />
       ) : (
         <p className="rounded-lg border border-neutral-200 bg-card p-4 text-sm text-neutral-700">
           A row-by-row list is not kept for this entry.
@@ -116,7 +280,7 @@ function EntryDetail({ entry, cloned, onViewJob }: { entry: HistoryEntry; cloned
 
 // ── Panel ────────────────────────────────────────────────────────────────────
 
-export function BulkHistoryPanel({ entries, cloneCounts, onClose, onViewJob }: BulkHistoryPanelProps) {
+export function BulkHistoryPanel({ entries, cloneCounts, onClose, onViewJob, availabilities, onOpenAvailability }: BulkHistoryPanelProps) {
   const [type, setType] = useState<string>(ALL);
   const [status, setStatus] = useState<string>(ALL);
   const [runBy, setRunBy] = useState<string>(ALL);
@@ -174,7 +338,13 @@ export function BulkHistoryPanel({ entries, cloneCounts, onClose, onViewJob }: B
 
         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
           {open ? (
-            <EntryDetail entry={open} cloned={cloneCounts[open.id] ?? 0} onViewJob={() => onViewJob(open.id)} />
+            <EntryDetail
+              entry={open}
+              cloned={cloneCounts[open.id] ?? 0}
+              onViewJob={() => onViewJob(open.id)}
+              availabilities={availabilities}
+              onOpenAvailability={onOpenAvailability}
+            />
           ) : (
             <div className="space-y-3">
               <div className="flex flex-wrap items-center gap-2">

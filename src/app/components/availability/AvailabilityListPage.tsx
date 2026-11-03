@@ -9,7 +9,6 @@ import {
   MapPin,
   RotateCw,
   Search,
-  UserRound,
   Users,
   Wrench,
   X,
@@ -32,23 +31,34 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '../ui/alert-dialog';
+import {
+  ADVISORY_THRESHOLD,
   AvailabilityListTable,
   ColumnKey,
-  MAX_CLONE_SELECTION,
   SCROLL_COLUMNS,
   SortState,
 } from './AvailabilityListTable';
 import { BulkCloneWizard } from './BulkCloneWizard';
 import { BulkHistoryPanel } from './BulkHistoryPanel';
-import { HistoryEntry, SEED_HISTORY } from '../../data/bulkHistory';
-import { mockAvailabilities, Availability } from '../../data/mockAvailabilities';
+import { HistoryEntry } from '../../data/bulkHistory';
+import { Availability } from '../../data/mockAvailabilities';
+import { useAvailabilityStore } from '../../data/AvailabilityContext';
 
 interface AvailabilityListPageProps {
   currentPath: string;
   onNavigate: (path: string) => void;
 }
 
-// Time-based tabs. `status` (Published/Closed/Draft/Scheduled) stays a separate
+// Time-based tabs. `status` (Published/Unpublished/Closed) stays a separate
 // per-row dimension shown via the Status badge column.
 type ActiveTab = 'All' | 'Upcoming' | 'Current' | 'Completed';
 const TABS: ActiveTab[] = ['All', 'Upcoming', 'Current', 'Completed'];
@@ -67,17 +77,17 @@ function getTimeBucket(a: Availability, today: string): 'Upcoming' | 'Current' |
 }
 
 // ── Search (production: field picker + "Search by <field>") ──────────────────
-type SearchField = 'name' | 'availabilityId' | 'location';
+type SearchField = 'name' | 'availabilityId' | 'createdBy';
 const SEARCH_FIELDS: Array<{ key: SearchField; label: string; value: (a: Availability) => string }> = [
   { key: 'name', label: 'Availability Name', value: (a) => a.name },
   { key: 'availabilityId', label: 'Availability ID', value: (a) => a.availabilityId },
-  { key: 'location', label: 'Location Name', value: (a) => a.location },
+  { key: 'createdBy', label: 'Created By', value: (a) => a.createdBy },
 ];
 
 // ── Filters ──────────────────────────────────────────────────────────────────
 // The first five are always in the bar, as in production. The rest are added
 // from "Add Filter". Within a filter, values are OR'd; across filters, AND'd.
-type FilterKey = 'discipline' | 'program' | 'locationGroup' | 'location' | 'status' | 'experienceType' | 'createdBy';
+type FilterKey = 'discipline' | 'program' | 'locationGroup' | 'location' | 'status' | 'experienceType';
 const FILTERS: Array<{ key: FilterKey; label: string; icon: LucideIcon; values: (a: Availability) => string[] }> = [
   { key: 'discipline', label: 'Discipline', icon: BookOpen, values: (a) => [a.discipline] },
   { key: 'program', label: 'Programs', icon: BookOpen, values: (a) => a.programTypes },
@@ -85,12 +95,11 @@ const FILTERS: Array<{ key: FilterKey; label: string; icon: LucideIcon; values: 
   { key: 'location', label: 'Locations', icon: MapPin, values: (a) => [a.location] },
   { key: 'status', label: 'Status', icon: ListChecks, values: (a) => [a.status] },
   { key: 'experienceType', label: 'Experience Type', icon: Users, values: (a) => [a.experienceType] },
-  { key: 'createdBy', label: 'Created By', icon: UserRound, values: (a) => [a.createdBy] },
 ];
 const DEFAULT_FILTERS: FilterKey[] = ['discipline', 'program', 'locationGroup', 'location', 'status'];
 const EXTRA_FILTERS = FILTERS.filter((f) => !DEFAULT_FILTERS.includes(f.key));
 const NO_FILTERS: Record<FilterKey, string[]> = {
-  discipline: [], program: [], locationGroup: [], location: [], status: [], experienceType: [], createdBy: [],
+  discipline: [], program: [], locationGroup: [], location: [], status: [], experienceType: [],
 };
 
 function matchesFilters(a: Availability, filters: Record<FilterKey, string[]>): boolean {
@@ -238,8 +247,8 @@ function CreatedOnFilter({
 }
 
 export function AvailabilityListPage({ currentPath, onNavigate }: AvailabilityListPageProps) {
-  // Availability list state (seeded from mock; appended by bulk-clone submits)
-  const [availabilities, setAvailabilities] = useState<Availability[]>(mockAvailabilities);
+  // Availability list state (seeded from mock; appended by bulk-clone submits); kept outside the page so the availability page can read it
+  const { availabilities, setAvailabilities, history, setHistory } = useAvailabilityStore();
 
   // ── Tab state ──────────────────────────────────────────────────────────────
   const activeTab: ActiveTab =
@@ -278,9 +287,15 @@ export function AvailabilityListPage({ currentPath, onNavigate }: AvailabilityLi
 
   // ── Selection + wizard state ───────────────────────────────────────────────
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  // "Select all across all pages": every row matching the tab and filters is selected and
+  // individual ticking is locked until Clear all (same as production)
+  const [allPagesSelected, setAllPagesSelected] = useState(false);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
   const [wizardOpen, setWizardOpen] = useState(false);
+  // Shown before the wizard opens when the batch is larger than ADVISORY_THRESHOLD
+  const [largeBatchConfirmOpen, setLargeBatchConfirmOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
-  const [history, setHistory] = useState<HistoryEntry[]>(SEED_HISTORY);
   // Set when the list is opened from a history entry: shows only the clones that job made
   const [jobFilter, setJobFilter] = useState<string | null>(null);
 
@@ -311,14 +326,29 @@ export function AvailabilityListPage({ currentPath, onNavigate }: AvailabilityLi
     return sort ? [...rows].sort(compareBy(sort)) : rows;
   }, [tabFiltered, searchTerm, searchFieldDef, filters, createdRange, jobFilter, sort]);
 
-  // A search or filter change narrows the selection to what's still visible
+  // A search or filter change narrows the selection to what's still visible. An
+  // "all pages" selection is for the list as it was, so it is cleared instead.
   useEffect(() => {
-    const visible = new Set(visibleAvailabilities.map((a) => a.id));
-    setSelectedIds((prev) => {
-      const next = prev.filter((id) => visible.has(id));
-      return next.length === prev.length ? prev : next;
-    });
+    if (allPagesSelected) {
+      setAllPagesSelected(false);
+      setSelectedIds([]);
+    } else {
+      const visible = new Set(visibleAvailabilities.map((a) => a.id));
+      setSelectedIds((prev) => {
+        const next = prev.filter((id) => visible.has(id));
+        return next.length === prev.length ? prev : next;
+      });
+    }
+    setPage(1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visibleAvailabilities]);
+
+  const pageCount = Math.max(1, Math.ceil(visibleAvailabilities.length / pageSize));
+  const currentPage = Math.min(page, pageCount);
+  const pageRows = useMemo<Availability[]>(
+    () => visibleAvailabilities.slice((currentPage - 1) * pageSize, currentPage * pageSize),
+    [visibleAvailabilities, currentPage, pageSize],
+  );
 
   // Options come from the current tab, plus anything already selected
   const optionsFor = (key: FilterKey) => {
@@ -345,25 +375,33 @@ export function AvailabilityListPage({ currentPath, onNavigate }: AvailabilityLi
   // Behavior (b): a tab switch clears the selection
   const handleTabChange = (tab: ActiveTab) => {
     setSelectedIds([]);
+    setAllPagesSelected(false);
     onNavigate(TAB_ROUTES[tab]);
   };
 
-  // Select all selects up to the hard cap (visible rows, in the order shown)
-  const handleSelectAll = (checked: boolean) => {
-    setSelectedIds(checked ? visibleAvailabilities.slice(0, MAX_CLONE_SELECTION).map((a) => a.id) : []);
+  // Header checkbox works on the rows of the page being shown
+  const handleSelectPage = (checked: boolean) => {
+    const ids = pageRows.map((a) => a.id);
+    setSelectedIds((prev) => (checked ? Array.from(new Set([...prev, ...ids])) : prev.filter((id) => !ids.includes(id))));
+  };
+
+  const handleSelectAllPages = () => {
+    setSelectedIds(visibleAvailabilities.map((a) => a.id));
+    setAllPagesSelected(true);
+  };
+
+  const handleClearAll = () => {
+    setSelectedIds([]);
+    setAllPagesSelected(false);
   };
 
   const handleSelectOne = (id: string, checked: boolean) => {
-    if (checked) {
-      setSelectedIds((prev) =>
-        prev.includes(id) || prev.length >= MAX_CLONE_SELECTION ? prev : [...prev, id],
-      );
-    } else {
-      setSelectedIds((prev) => prev.filter((x) => x !== id));
-    }
+    if (allPagesSelected) return;
+    setSelectedIds((prev) => (checked ? (prev.includes(id) ? prev : [...prev, id]) : prev.filter((x) => x !== id)));
   };
 
-  const handleBulkClone = () => setWizardOpen(true);
+  const handleBulkClone = () =>
+    selectedIds.length > ADVISORY_THRESHOLD ? setLargeBatchConfirmOpen(true) : setWizardOpen(true);
 
   // How many availabilities each job made, for the "View availabilities" link in history
   const cloneCounts = useMemo(() => {
@@ -396,20 +434,44 @@ export function AvailabilityListPage({ currentPath, onNavigate }: AvailabilityLi
             if (newOnes.length > 0) setAvailabilities((prev) => [...newOnes, ...prev]);
             upsertHistory(entry);
             setWizardOpen(false);
-            setSelectedIds([]);
+            handleClearAll();
           }}
         />
       )}
+
+      <AlertDialog open={largeBatchConfirmOpen} onOpenChange={setLargeBatchConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{`Clone ${selectedIds.length} availabilities?`}</AlertDialogTitle>
+            <AlertDialogDescription>
+              Large batches take a long time to review. Continue, or go back and reduce the selection.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Go back to the list</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setLargeBatchConfirmOpen(false);
+                setWizardOpen(true);
+              }}
+            >
+              {`Continue with ${selectedIds.length}`}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {historyOpen && (
         <BulkHistoryPanel
           entries={history}
           cloneCounts={cloneCounts}
+          availabilities={availabilities}
+          onOpenAvailability={(id) => onNavigate(`/internships/${id}`)}
           onClose={() => setHistoryOpen(false)}
           onViewJob={(id) => {
             setJobFilter(id);
             setHistoryOpen(false);
-            setSelectedIds([]);
+            handleClearAll();
             onNavigate(TAB_ROUTES.All);
           }}
         />
@@ -640,13 +702,23 @@ export function AvailabilityListPage({ currentPath, onNavigate }: AvailabilityLi
           </div>
 
           <AvailabilityListTable
-            availabilities={visibleAvailabilities}
+            availabilities={pageRows}
             totalCount={visibleAvailabilities.length}
             selectedIds={selectedIds}
+            allPagesSelected={allPagesSelected}
+            page={currentPage}
+            pageSize={pageSize}
+            onPageChange={setPage}
+            onPageSizeChange={(n) => {
+              setPageSize(n);
+              setPage(1);
+            }}
+            onSelectPage={handleSelectPage}
+            onSelectAllPages={handleSelectAllPages}
+            onClearAll={handleClearAll}
             hiddenColumns={hiddenColumns}
             sort={sort}
             onSortChange={setSort}
-            onSelectAll={handleSelectAll}
             onSelectOne={handleSelectOne}
             onBulkClone={handleBulkClone}
           />
