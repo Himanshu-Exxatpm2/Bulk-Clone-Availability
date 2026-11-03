@@ -425,6 +425,8 @@ export function AvailabilityListPage({ currentPath, onNavigate }: AvailabilityLi
       {wizardOpen && (
         <BulkCloneWizard
           availabilities={selectedAvailabilities}
+          // Select all across all pages: the batch can't be trimmed on the Review step
+          removalLocked={allPagesSelected}
           existingNames={availabilities.map((a) => a.name)}
           onHistoryChange={upsertHistory}
           // Closing without creating keeps the selection, so the coordinator can reopen it

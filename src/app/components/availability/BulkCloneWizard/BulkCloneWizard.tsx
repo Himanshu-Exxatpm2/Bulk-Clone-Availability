@@ -55,6 +55,8 @@ interface BulkCloneWizardProps {
   availabilities: Availability[];
   /** Every name already in the Availability list; clones may not reuse one. */
   existingNames: string[];
+  /** Set when everything was selected across all pages: the Review step doesn't allow removing rows */
+  removalLocked?: boolean;
   onClose: () => void;
   /** Called when the coordinator leaves the result screen; carries the clones and the history record of this job. */
   onCloneComplete: (created: Availability[], historyEntry: HistoryEntry) => void;
@@ -67,6 +69,7 @@ interface BulkCloneWizardProps {
 export function BulkCloneWizard({
   availabilities: initialAvailabilities,
   existingNames,
+  removalLocked = false,
   onClose,
   onCloneComplete,
   onHistoryChange,
@@ -389,6 +392,7 @@ export function BulkCloneWizard({
                     resolvedNames={resolvedNames}
                     dates={step2Data.dates}
                     removedCount={removedIds.length}
+                    canRemove={!removalLocked}
                     onDelete={(id) => setRemovedIds((prev) => [...prev, id])}
                     onRestoreAll={() => setRemovedIds([])}
                   />

@@ -20,6 +20,8 @@ interface Step3ReviewProps {
   dates: Record<string, { startDate: string; endDate: string }>;
   /** Rows removed so far; they stay out of the batch until restored. */
   removedCount: number;
+  /** False when everything was selected across all pages */
+  canRemove: boolean;
   onDelete: (id: string) => void;
   onRestoreAll: () => void;
 }
@@ -45,6 +47,7 @@ export function Step3Review({
   resolvedNames,
   dates,
   removedCount,
+  canRemove,
   onDelete,
   onRestoreAll,
 }: Step3ReviewProps) {
@@ -91,8 +94,9 @@ export function Step3Review({
               previous steps will differ.
             </p>
             <p className="text-xs text-blue-700 mt-1.5">
-              If you need to remove an availability from this batch, use the delete button
-              on its row — it stays removed if you go back. To change a name or date, use the Back button.
+              {canRemove
+                ? 'If you need to remove an availability from this batch, use the delete button on its row — it stays removed if you go back. To change a name or date, use the Back button.'
+                : 'You selected all availabilities across all pages, so none can be removed here. To change the selection, close this window and clear it in the list.'}
             </p>
           </div>
         </div>
@@ -107,7 +111,9 @@ export function Step3Review({
             Review Clones ({availabilities.length})
           </h3>
           <p className="text-xs text-neutral-600 mt-0.5">
-            All fields are read-only. Go back to adjust names or dates. Use the delete button to remove an availability from this batch.
+            {canRemove
+              ? 'All fields are read-only. Go back to adjust names or dates. Use the delete button to remove an availability from this batch.'
+              : 'All fields are read-only. Go back to adjust names or dates.'}
           </p>
         </div>
 
@@ -136,9 +142,11 @@ export function Step3Review({
                 <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-neutral-700 border-b border-neutral-200 w-[14%]">
                   Location Group
                 </th>
-                <th className="text-center px-4 py-3 text-xs font-semibold uppercase tracking-wider text-neutral-700 border-b border-neutral-200 w-[4%] sticky right-0 bg-[var(--bg-table-header)]">
-                  {/* Delete */}
-                </th>
+                {canRemove && (
+                  <th className="text-center px-4 py-3 text-xs font-semibold uppercase tracking-wider text-neutral-700 border-b border-neutral-200 w-[4%] sticky right-0 bg-[var(--bg-table-header)]">
+                    {/* Delete */}
+                  </th>
+                )}
               </tr>
             </thead>
             <tbody>
@@ -172,6 +180,7 @@ export function Step3Review({
                     <td className="px-4 py-3 text-sm text-neutral-700 border-b border-neutral-100 align-top">
                       {a.locationGroup}
                     </td>
+                    {canRemove && (
                     <td className={`px-4 py-3 border-b border-neutral-100 align-top text-center sticky right-0 ${isEven ? 'bg-card' : 'bg-neutral-50'}`}>
                       <button
                         type="button"
@@ -183,6 +192,7 @@ export function Step3Review({
                         <FontAwesomeIcon name="trash" className="w-3.5 h-3.5" aria-hidden="true" />
                       </button>
                     </td>
+                    )}
                   </tr>
                 );
               })}
