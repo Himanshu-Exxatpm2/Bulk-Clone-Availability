@@ -28,7 +28,7 @@ import { Step3Review } from './Step3Review';
 import { Step4Publish, publishRowIssues } from './Step4Publish';
 import { CreationProgress } from './CreationProgress';
 import { CreationSummary } from './CreationSummary';
-import { finalizeNames } from './naming';
+import { cleanName, finalizeNames } from './naming';
 import { CURRENT_USER_EMAIL, HistoryEntry, describeSource, describeTarget, statusFor } from '../../../data/bulkHistory';
 import { DraftIssue, simulateBackendCheck } from './backendCheck';
 
@@ -98,17 +98,13 @@ export function BulkCloneWizard({
     [initialAvailabilities, removedIds],
   );
 
-  // Names shown in steps 1 to 4 are checked only inside the batch, from the rows still in it,
-  // so a removal re-numbers the rest. Existing availability names are checked at creation.
-  const batchNames = useMemo(
-    () => finalizeNames(activeAvailabilities, step1Data.rawNames, []),
+  // Names shown in steps 1 to 4 are the template names only. A row's name never depends on
+  // another row, so it holds across pages. #2, #3 for repeats are added when Create is confirmed.
+  const resolvedNames = useMemo(
+    () => Object.fromEntries(activeAvailabilities.map((a) => [a.id, cleanName(step1Data.rawNames[a.id] ?? '')])),
     [activeAvailabilities, step1Data.rawNames],
   );
-  const resolvedNames = useMemo(
-    () => Object.fromEntries(Object.entries(batchNames).map(([id, f]) => [id, f.name])),
-    [batchNames],
-  );
-  // Names as saved: also numbered against every existing availability. Fixed when Create is confirmed.
+  // Names as saved: numbered across the whole batch and every existing availability. Fixed when Create is confirmed.
   const [savedNames, setSavedNames] = useState<Record<string, string>>({});
   const [confirmCreate, setConfirmCreate] = useState(false);
 

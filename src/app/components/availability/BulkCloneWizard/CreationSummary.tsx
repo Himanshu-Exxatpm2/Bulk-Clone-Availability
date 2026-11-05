@@ -18,7 +18,7 @@ interface CreationSummaryProps {
   results: CreationResult[];
   /** Names as saved (numbered against the existing list). */
   resolvedNames: Record<string, string>;
-  /** Names the coordinator saw in step 1 (numbered inside the batch only). */
+  /** Names the coordinator saw in step 1 (template name, no numbers). */
   stepOneNames: Record<string, string>;
   /** The publish preferences every clone was created with */
   preferences: PublishPreferenceCardState[];

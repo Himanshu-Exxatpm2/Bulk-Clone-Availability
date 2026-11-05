@@ -18,7 +18,7 @@ Opens on http://localhost:5176 (fixed port, so it can run alongside `exxat-one-b
 
 1. Log in with any username or email, then pick a product and a site.
 2. Sidebar: **Availability Management → Availability**.
-3. Tick 2 or more rows (cap: 25; an advisory appears from 15) and click **Clone N Availabilities**.
+3. Tick 2 or more rows (no cap; an advisory and confirmation appear above 100) and click **Clone N Availabilities**.
    A single row uses the **Clone** icon on its row.
 4. Wizard: Naming → Dates → Review → Publish → progress → summary.
 
@@ -26,9 +26,9 @@ Opens on http://localhost:5176 (fixed port, so it can run alongside `exxat-one-b
 
 - Availability list in the shell's page pattern: tabs (All / Upcoming / Current / Completed), multi-select
   filters, search, selection toolbar, single-row clone.
-- Selection cap of 25 with a dismissible advisory at 15 or more.
+- No selection cap; select all works across pages.
 - Step 1: single-input `@` mention template (`@location`, `@discipline`,
-  `@program_type`, `@experience_type`), live preview, `#2`/`#3` suffixes for duplicates, Duplicate Check column.
+  `@program_type`, `@experience_type`), live preview of the template name only. **V3:** no `#2`/`#3` on Naming or Review, because a row's name must not depend on other pages; the backend adds the numbers at creation and the creation summary shows the final names beside the step 1 names.
 - Step 2: **Roll Forward** by 3 months, 6 months or 1 year, or **Custom Date** (one start and end date applied to every availability), with per-row edits either way.
 - Step 3: review table with a sticky remove column and horizontal scroll.
 - Step 4: publish preference — same for all, or default plus per-availability overrides with rotation dates shown.

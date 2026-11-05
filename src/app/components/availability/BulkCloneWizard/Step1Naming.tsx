@@ -13,7 +13,6 @@ import {
   TOKENS,
   TOKEN_TO_FIELD,
   fieldValue,
-  finalizeNames,
   parseLocations,
   resolveName,
   unknownTokens,
@@ -23,7 +22,7 @@ import {
 
 export interface Step1Data {
   template: string;
-  /** Names before duplicate numbering; the wizard works out final names from these. */
+  /** Names from the template. Numbers for repeats (#2, #3) are added by the backend at creation. */
   rawNames: Record<string, string>;
   locationOverrides: Record<string, string>;
 }
@@ -74,13 +73,8 @@ export function Step1Naming({
     return out;
   }, [availabilities, template, locationOverrides]);
 
-  const finalNames = useMemo(
-    () => finalizeNames(availabilities, rawNames, existingNames),
-    [availabilities, rawNames, existingNames],
-  );
-
-  // Only the name itself is checked here, and only inside the batch. Existing
-  // availability names are checked when the clones are created. Nothing about
+  // Only an empty name is checked here. Repeats are numbered, and existing
+  // names checked, when the clones are created. Nothing about
   // location, discipline, program type or experience type is checked until then;
   // any problem with those is reported there and the clone is saved as a draft.
   const rowChecks = useMemo(() => {
@@ -89,21 +83,13 @@ export function Step1Naming({
       const errors: string[] = [];
       const warnings: string[] = [];
       if (hasTemplate) {
-        const f = finalNames[a.id];
         // A name can never be empty: it needs at least 1 character
-        if (!f?.name) errors.push("Name can't be empty");
-        if (f?.suffix) {
-          warnings.push(
-            f.clash === 'existing'
-              ? `Name already exists in your list — saved as "#${f.suffix}"`
-              : `Same name as another clone in this batch — saved as "#${f.suffix}"`,
-          );
-        }
+        if (!rawNames[a.id]) errors.push("Name can't be empty");
       }
       out[a.id] = { errors, warnings };
     }
     return out;
-  }, [availabilities, hasTemplate, finalNames]);
+  }, [availabilities, hasTemplate, rawNames]);
 
   const isValid =
     hasTemplate &&
@@ -172,10 +158,6 @@ export function Step1Naming({
   // Preview table paging; the checks above still run on every row, not just the page shown
   const { pageRows, pager } = usePaging(availabilities);
 
-  // Rows that need no number are unique; rows that get "#2", "#3"… are duplicates of another name in the batch
-  const duplicateCount = hasTemplate ? availabilities.filter((a) => finalNames[a.id]?.suffix).length : 0;
-  const uniqueCount = availabilities.length - duplicateCount;
-
   const dropdownTokens = TOKENS.filter(
     (t) => t.label.toLowerCase().includes(dropdownFilter) || t.token.toLowerCase().includes(dropdownFilter),
   );
@@ -206,7 +188,7 @@ export function Step1Naming({
             </p>
             <ul className="mt-2 space-y-1 text-xs text-blue-700 list-disc list-inside">
               <li>Use a separator (e.g. <span className="font-mono bg-blue-100 px-0.5 rounded"> – </span>) between fields, and add the season and year as plain text so the clone is clearly distinct from the original.</li>
-              <li>If two clones in this batch get the same name, "#2", "#3" … is added. Names are also checked against your existing availabilities when the clones are created, and the final name is shown then.</li>
+              <li>If a name is already used, "#2", "#3" … is added when the clones are created. The final names are shown in the creation summary.</li>
             </ul>
           </div>
         </div>
@@ -299,13 +281,6 @@ export function Step1Naming({
             <span>{availabilities.length} availabilit{availabilities.length !== 1 ? 'ies' : 'y'}</span>
             {hasTemplate && unknown.length === 0 && (
               <>
-                <span className="font-medium text-positive-default">{uniqueCount} unique</span>
-                <span
-                  className={duplicateCount > 0 ? 'font-medium text-warning-default' : ''}
-                  title="Same name as another clone in this batch; a number (#2, #3…) is added"
-                >
-                  {duplicateCount} duplicate
-                </span>
                 {rowsWithErrors > 0 && (
                   <span className="font-medium text-negative-default">{rowsWithErrors} need fixing</span>
                 )}
@@ -332,7 +307,6 @@ export function Step1Naming({
             {pageRows.map((a, idx) => {
               const locs = parseLocations(a.location);
               const showLocPicker = locs.length > 1 && locationInTemplate;
-              const final = finalNames[a.id];
               const { errors, warnings } = rowChecks[a.id];
 
               return (
@@ -351,11 +325,6 @@ export function Step1Naming({
                         <div className="leading-relaxed break-words">
                           {/* The cleaned name, exactly as it will be saved */}
                           <span className="text-neutral-850">{rawNames[a.id] || '—'}</span>
-                          {final?.suffix && (
-                            <span className="inline-block bg-accent-100 text-warning-default text-xs font-semibold px-1.5 py-0.5 rounded ml-1 align-baseline">
-                              #{final.suffix}
-                            </span>
-                          )}
                         </div>
 
                         {/* Location picker for multi-location availabilities; stays so the pick can change */}
@@ -392,16 +361,10 @@ export function Step1Naming({
                             {msg}
                           </p>
                         ))}
-                        {warnings.map((msg) => (
-                          <p key={msg} className="flex items-start gap-1.5 text-xs text-warning-default">
-                            <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-warning-default" />
-                            {msg}
-                          </p>
-                        ))}
-                        {errors.length === 0 && warnings.length === 0 && (
+                        {errors.length === 0 && (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-positive-default/10 border border-positive-default/30 text-positive-default text-xs font-medium">
                             <span className="w-1.5 h-1.5 rounded-full bg-positive-default flex-shrink-0" />
-                            Unique
+                            Ready
                           </span>
                         )}
                       </div>

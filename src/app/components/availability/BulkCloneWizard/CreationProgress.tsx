@@ -17,7 +17,7 @@ interface CreationProgressProps {
   availabilities: Availability[];
   /** Names as saved (numbered against the existing list). */
   resolvedNames: Record<string, string>;
-  /** Names the coordinator saw in step 1 (numbered inside the batch only). */
+  /** Names the coordinator saw in step 1 (template name, no numbers). */
   stepOneNames: Record<string, string>;
   /** What the backend rejected, per availability; those are saved as Unpublished. */
   draftIssues: Record<string, DraftIssue[]>;
