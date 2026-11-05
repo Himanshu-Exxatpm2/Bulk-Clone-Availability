@@ -89,13 +89,16 @@ export function CreationSummary({
   const counts = {
     all: rows.length,
     published: rows.filter((r) => r.outcome === 'published').length,
-    unpublished: rows.filter((r) => r.outcome === 'unpublished').length,
+    // An inactive location also leaves the clone Unpublished, so it counts here and under Issues
+    unpublished: rows.filter((r) => r.outcome !== 'published').length,
     issues: rows.filter((r) => r.outcome === 'issues').length,
   };
-  const created = counts.published + counts.unpublished;
+  // Every clone is created; a problem only keeps it from being published
+  const created = counts.all;
   const visibility = visibilityLine(preferences);
 
-  const shown = tab === 'all' ? rows : rows.filter((r) => r.outcome === tab);
+  const shown =
+    tab === 'all' ? rows : tab === 'unpublished' ? rows.filter((r) => r.outcome !== 'published') : rows.filter((r) => r.outcome === tab);
   const pageCount = Math.max(1, Math.ceil(shown.length / PAGE_SIZE));
   const currentPage = Math.min(page, pageCount);
   const pageRows = shown.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
@@ -142,7 +145,7 @@ export function CreationSummary({
         </dl>
         {counts.issues > 0 && (
           <p className="mt-3 text-xs text-warning-default">
-            {`${counts.issues} could not be created as asked and ${counts.issues === 1 ? 'was' : 'were'} saved as Unpublished. Open the Issues tab for the problem and how to fix it.`}
+            {`${counts.issues} ${counts.issues === 1 ? 'was' : 'were'} not published because the location is inactive. ${counts.issues === 1 ? 'It stays' : 'They stay'} Unpublished until you fix the location and change the publish preference. Open the Issues tab for how to fix it.`}
           </p>
         )}
       </div>
@@ -176,7 +179,7 @@ export function CreationSummary({
 
         {pageRows.length === 0 ? (
           <p className="px-4 py-8 text-center text-sm text-neutral-600">
-            {tab === 'issues' ? 'No issues. Every availability was created as asked.' : 'Nothing here.'}
+            {tab === 'issues' ? 'No issues. Nothing is held back from publishing.' : 'Nothing here.'}
           </p>
         ) : (
           <ul className="divide-y divide-neutral-100" role="tabpanel">

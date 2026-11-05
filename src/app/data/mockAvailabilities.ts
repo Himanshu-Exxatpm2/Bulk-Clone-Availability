@@ -25,8 +25,8 @@ export interface Availability {
   requestedSlots: number;
   specializations: string[]; // Discipline/Specialization column: discipline first, then specializations
   programTypes: string[];    // Program Type column: full program names
-  /** Prototype only: values the backend would reject when the clone is created. */
-  retiredValues?: Array<'locationGroup' | 'discipline' | 'programType' | 'experienceType'>;
+  /** Prototype only: the location is inactive, which the backend finds when the clone is created. */
+  locationInactive?: boolean;
   /** Set on an availability created by Bulk Clone; drives the info icon in the list. */
   clonedFrom?: { batchId: string; sourceName: string; clonedOn: string; clonedBy: string };
   /** Publish Options shown on the availability page; set on clones, derived for the rest */
@@ -339,22 +339,22 @@ const baseAvailabilities: Omit<Availability, ListFields>[] = [
     status: 'Closed',    tenant: 'MedStar',
   },
   // ── Records that exercise the wizard's edge paths ──
-  // Location Group was archived after this was posted → the backend rejects it at creation
+  // The location was marked inactive after this was posted → the clone is saved Unpublished
   {
     id: 'avail-022',
     name: 'MedStar Rehab PT - Fall 2025',
     startDate: '2025-09-02',
     endDate: '2025-12-12',
     slotCount: 2,
-    location: 'MedStar National Rehabilitation Network',
+    location: 'MedStar National Rehabilitation Network (Inactive)',
     locationGroup: 'MedStar Legacy Rehab Group',
     discipline: 'Physical Therapy',
     programType: 'DPT',
     experienceType: 'Individual',
     status: 'Published',    tenant: 'MedStar',
-    retiredValues: ['locationGroup'],
+    locationInactive: true,
   },
-  // Program Type was retired → the backend rejects it at creation
+  // Nothing to flag here: only the location can stop a clone from publishing
   {
     id: 'avail-023',
     name: 'ATI Pediatric OT - Spring 2026',
@@ -364,10 +364,9 @@ const baseAvailabilities: Omit<Availability, ListFields>[] = [
     location: 'ATI Physical Therapy – Bethesda',
     locationGroup: 'ATI Mid-Atlantic',
     discipline: 'Occupational Therapy',
-    programType: 'MOT (Legacy)',
+    programType: 'MOT',
     experienceType: 'Individual',
     status: 'Published',    tenant: 'ATI',
-    retiredValues: ['programType'],
   },
   // Spans two locations → the Naming step asks which one @location should use
   {
@@ -433,9 +432,9 @@ export function newAvailabilityId(): string {
 
 // Prototype only: 100 more rows built from the records above, so the list runs to
 // several pages and "select all across all pages" has something to work on. Fully
-// deterministic; the two flagged demo drafts (retired values) are not repeated.
+// deterministic; the flagged demo record (inactive location) is not repeated.
 const generatedAvailabilities: Omit<Availability, ListFields>[] = (() => {
-  const templates = baseAvailabilities.filter((a) => !a.retiredValues);
+  const templates = baseAvailabilities.filter((a) => !a.locationInactive);
   return Array.from({ length: 100 }, (_, n) => {
     const t = templates[n % templates.length];
     const round = Math.floor(n / templates.length);

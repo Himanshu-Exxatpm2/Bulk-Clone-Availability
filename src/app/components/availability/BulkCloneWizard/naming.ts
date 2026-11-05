@@ -81,8 +81,7 @@ export function resolveName(
 
 /**
  * Labels of fields in the template that have no value on this availability
- * (e.g. its Program Type was retired, or no location was picked for a
- * multi-location availability). Such a clone is saved as a draft when created.
+ * (e.g. no location was picked for a multi-location availability).
  */
 export function blankFields(
   a: Availability,

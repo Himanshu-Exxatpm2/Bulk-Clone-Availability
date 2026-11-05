@@ -73,10 +73,9 @@ export function Step1Naming({
     return out;
   }, [availabilities, template, locationOverrides]);
 
-  // Only an empty name is checked here. Repeats are numbered, and existing
-  // names checked, when the clones are created. Nothing about
-  // location, discipline, program type or experience type is checked until then;
-  // any problem with those is reported there and the clone is saved as a draft.
+  // Only an empty name is checked here. Repeats are numbered when the clones are created.
+  // The only other thing that can go wrong is an inactive location, which is found at
+  // creation; that clone is saved Unpublished.
   const rowChecks = useMemo(() => {
     const out: Record<string, { errors: string[]; warnings: string[] }> = {};
     for (const a of availabilities) {

@@ -1,29 +1,22 @@
 import { Availability } from '../../../data/mockAvailabilities';
 
-// Stand-in for the backend call that runs when the clones are created. Until that
-// call runs the app cannot know whether a Location Group, Discipline, Program Type
-// or Experience Type on the original is still valid, so nothing before the last
-// step checks them. The prototype marks the values the backend would reject with
-// `retiredValues` on the mock record.
+// Stand-in for the backend call that runs when the clones are created. The only thing
+// that can stop a clone from publishing is its location: if the location has been marked
+// inactive, the clone is saved Unpublished and stays that way until the coordinator fixes
+// the location and changes the publish preference. No other field is checked.
+// The prototype marks such a record with `locationInactive` on the mock record.
 
 export interface DraftIssue {
   problem: string;
   fix: string;
 }
 
-const FIELD_LABELS: Record<string, string> = {
-  locationGroup: 'Location Group',
-  discipline: 'Discipline',
-  programType: 'Program Type',
-  experienceType: 'Experience Type',
-};
-
 export function simulateBackendCheck(a: Availability): DraftIssue[] {
-  return (a.retiredValues ?? []).map((field) => {
-    const label = FIELD_LABELS[field];
-    return {
-      problem: `${label} "${a[field]}" is no longer active in the system.`,
-      fix: `Open the availability, choose an active ${label}, then save it. It then goes live as its publish preference says.`,
-    };
-  });
+  if (!a.locationInactive) return [];
+  return [
+    {
+      problem: `Location "${a.location}" is inactive, so this availability is saved as Unpublished and will not be published.`,
+      fix: 'Open the availability, choose an active location, save it, then change the publish preference. It stays Unpublished until you do.',
+    },
+  ];
 }
