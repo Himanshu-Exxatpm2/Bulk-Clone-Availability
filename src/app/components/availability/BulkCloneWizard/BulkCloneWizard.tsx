@@ -23,18 +23,24 @@ import {
 import { PublishPreferenceCardState, isCardValid, makeEmptyCard, statusForPreferences } from '../publishPreferenceData';
 import { WizardStepIndicator } from './WizardStepIndicator';
 import { Step1Naming, Step1Data } from './Step1Naming';
-import { Step2Dates, Step2Data } from './Step2Dates';
+import { Step2Dates, Step2Data, defaultRollMonths, rolledDates } from './Step2Dates';
 import { Step3Review } from './Step3Review';
 import { Step4Publish, publishRowIssues } from './Step4Publish';
 import { CreationProgress } from './CreationProgress';
 import { CreationSummary } from './CreationSummary';
-import { cleanName, finalizeNames } from './naming';
+import { finalizeNames, resolveName } from './naming';
 import { CURRENT_USER_EMAIL, HistoryEntry, describeSource, describeTarget, statusFor } from '../../../data/bulkHistory';
-import { sourceDeleted } from './backendCheck';
+import { CreationResult, cloneOutcome, wasCreated } from './backendCheck';
+import { creationMode } from '../creationMode';
 
-interface CreationResult {
-  availability: Availability;
-  status: 'created' | 'missing';
+/** A job handed to the Availability list when it runs behind the scenes (submit mode) */
+export interface SubmittedJob {
+  /** The history entry while the job is running */
+  progressEntry: HistoryEntry;
+  /** The history entry once it has finished */
+  finalEntry: HistoryEntry;
+  /** What the job creates, added to the list when it finishes */
+  created: Availability[];
 }
 
 interface Step4Data {
@@ -45,8 +51,10 @@ interface Step4Data {
 type WizardState = 'steps' | 'progress' | 'summary';
 
 // Step order: 1 Naming, 2 Dates, 3 Review, 4 Publish.
-// Nothing stops the batch up front, and no field (location included) holds a clone back:
-// every clone is created and published as the publish preference says.
+// Nothing stops the batch up front; only the backend can know what it will accept, so it is
+// found out at creation: an availability whose locations are all inactive is not created, one with
+// some inactive locations is created with the active ones, and a deleted original is skipped.
+// Everything that is created is published as the publish preference says.
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
@@ -61,6 +69,8 @@ interface BulkCloneWizardProps {
   onCloneComplete: (created: Availability[], historyEntry: HistoryEntry) => void;
   /** The history record of this job: written as In progress when creation starts, then replaced with the result. */
   onHistoryChange: (entry: HistoryEntry) => void;
+  /** Submit mode only: the job runs behind the scenes and the wizard closes straight away */
+  onSubmitJob?: (job: SubmittedJob) => void;
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -72,13 +82,14 @@ export function BulkCloneWizard({
   onClose,
   onCloneComplete,
   onHistoryChange,
+  onSubmitJob,
 }: BulkCloneWizardProps) {
   const [wizardState, setWizardState] = useState<WizardState>('steps');
   const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4>(1);
   // Rows removed in Review stay removed across Back/Next
   const [removedIds, setRemovedIds] = useState<string[]>([]);
 
-  const [step1Data, setStep1Data] = useState<Step1Data>({ template: '', rawNames: {}, locationOverrides: {} });
+  const [step1Data, setStep1Data] = useState<Step1Data>({ template: '' });
   const [step1IsValid, setStep1IsValid] = useState(false);
 
   const [step2Data, setStep2Data] = useState<Step2Data>({ mode: 'roll', dates: {} });
@@ -97,19 +108,26 @@ export function BulkCloneWizard({
     [initialAvailabilities, removedIds],
   );
 
+  // The dates the clones will get: the ones chosen in the Dates step, or the suggested ones until then.
+  // Year of Start Date in a name follows these.
+  const newDates = useMemo(() => {
+    const suggested = rolledDates(activeAvailabilities, defaultRollMonths(activeAvailabilities, todayISO()));
+    return { ...suggested, ...step2Data.dates };
+  }, [activeAvailabilities, step2Data.dates]);
+
   // Names shown in steps 1 to 4 are the template names only. A row's name never depends on
   // another row, so it holds across pages. #2, #3 for repeats are added when Create is confirmed.
   const resolvedNames = useMemo(
-    () => Object.fromEntries(activeAvailabilities.map((a) => [a.id, cleanName(step1Data.rawNames[a.id] ?? '')])),
-    [activeAvailabilities, step1Data.rawNames],
+    () => Object.fromEntries(activeAvailabilities.map((a) => [a.id, resolveName(a, step1Data.template, newDates)])),
+    [activeAvailabilities, step1Data.template, newDates],
   );
   // Names as saved: numbered across the whole batch and every existing availability. Fixed when Create is confirmed.
   const [savedNames, setSavedNames] = useState<Record<string, string>>({});
   const [confirmCreate, setConfirmCreate] = useState(false);
 
-  // What the backend rejects. Only read once creation starts; nothing earlier knows.
-  const missingIds = useMemo(
-    () => activeAvailabilities.filter(sourceDeleted).map((a) => a.id),
+  // What the backend does with each clone. Only read once creation starts; nothing earlier knows.
+  const outcomes = useMemo(
+    () => Object.fromEntries(activeAvailabilities.map((a) => [a.id, cloneOutcome(a)])),
     [activeAvailabilities],
   );
 
@@ -152,11 +170,23 @@ export function BulkCloneWizard({
     if (!step4Valid) return;
     setConfirmCreate(false);
     // Names are now also numbered against every availability already in the list
-    const saved = finalizeNames(activeAvailabilities, step1Data.rawNames, existingNames);
-    setSavedNames(Object.fromEntries(Object.entries(saved).map(([id, f]) => [id, f.name])));
+    // Only clones that will be created take a number; one that is not created keeps its step 1 name
+    const saved = finalizeNames(activeAvailabilities.filter((a) => outcomes[a.id].kind === 'created' || outcomes[a.id].kind === 'partial'), resolvedNames, existingNames);
+    const names = Object.fromEntries(Object.entries(saved).map(([id, f]) => [id, f.name]));
+    setSavedNames(names);
     ranAtRef.current = new Date().toISOString();
+    if (creationMode() === 'submit' && onSubmitJob) {
+      // Submit mode: nothing to watch here. The list shows the job underway and then how it ended.
+      const results: CreationResult[] = activeAvailabilities.map((a) => ({ availability: a, outcome: outcomes[a.id] }));
+      onSubmitJob({
+        progressEntry: buildHistoryEntry([], names),
+        finalEntry: buildHistoryEntry(results, names),
+        created: buildCreatedAvailabilities(results, names),
+      });
+      return;
+    }
     // The job is on record from the moment it starts, whether or not the browser stays open
-    onHistoryChange(buildHistoryEntry([], Object.fromEntries(Object.entries(saved).map(([id, f]) => [id, f.name]))));
+    onHistoryChange(buildHistoryEntry([], names));
     setWizardState('progress');
   };
   // Anything that goes live straight away is confirmed first; otherwise creation starts at once
@@ -186,10 +216,10 @@ export function BulkCloneWizard({
   // One stable id per clone, shared by the Availability list and this job's history entry
   const cloneIdFor = (sourceId: string) => `clone-${batchIdRef.current}-${sourceId}`;
 
-  function buildCreatedAvailabilities(): Availability[] {
+  function buildCreatedAvailabilities(results: CreationResult[] = creationResults, names: Record<string, string> = savedNames): Availability[] {
     const today = todayISO();
-    // A clone whose original was deleted before the run was never created
-    return creationResults.filter((r) => r.status !== 'missing').map((r) => {
+    // Clones that were not created (inactive location, deleted original) are left out
+    return results.filter(wasCreated).map((r) => {
       // Published once any audience can see it today; otherwise Unpublished
       const derivedStatus: AvailabilityStatus = statusForPreferences(step4Data.preferences);
       // The last date schools can request is the latest due date among the preferences
@@ -198,7 +228,9 @@ export function BulkCloneWizard({
       return {
         ...r.availability,
         id: cloneIdFor(r.availability.id),
-        name: savedNames[r.availability.id] || resolvedNames[r.availability.id] || r.availability.name,
+        name: names[r.availability.id] || resolvedNames[r.availability.id] || r.availability.name,
+        // Inactive locations are left out of the clone
+        location: r.outcome.kind === 'partial' ? r.outcome.kept.join(', ') : r.availability.location,
         startDate:
           step2Data.dates[r.availability.id]?.startDate ?? r.availability.startDate,
         endDate:
@@ -230,9 +262,9 @@ export function BulkCloneWizard({
   // The record kept in Bulk Creation History for this job
   // `results` is empty while the job is still running
   function buildHistoryEntry(results: CreationResult[], names: Record<string, string> = savedNames): HistoryEntry {
-    const created = results.filter((r) => r.status === 'created').length;
+    const created = results.filter(wasCreated).length;
     const drafts = 0;
-    const failed = results.filter((r) => r.status === 'missing').length;
+    const failed = results.length - created;
     return {
       id: batchIdRef.current,
       type: 'Bulk Clone',
@@ -254,10 +286,15 @@ export function BulkCloneWizard({
         availabilityId: cloneIdFor(r.availability.id),
         stepOneName: resolvedNames[r.availability.id] || r.availability.name,
         savedName: names[r.availability.id] || resolvedNames[r.availability.id] || r.availability.name,
-        status: r.status === 'missing' ? 'failed' : 'created',
-        problems: r.status === 'missing'
-          ? [{ problem: 'The original availability was deleted before the clone ran.', fix: 'Nothing to do unless the delete was a mistake; then restore the original and clone it again.' }]
-          : undefined,
+        status: wasCreated(r) ? 'created' : 'failed',
+        problems:
+          r.outcome.kind === 'deleted'
+            ? [{ problem: 'The original availability was deleted before the clone ran.', fix: 'Nothing to do unless the delete was a mistake; then restore the original and clone it again.' }]
+            : r.outcome.kind === 'inactive'
+            ? [{ problem: `Not created: ${r.outcome.locations.join(', ')} ${r.outcome.locations.length === 1 ? 'is' : 'are'} inactive.`, fix: 'Make the location active, or clone to a different location.' }]
+            : r.outcome.kind === 'partial'
+            ? [{ problem: `Created without ${r.outcome.leftOut.join(', ')} (inactive).`, fix: 'To include it, make the location active and add it to the availability.' }]
+            : undefined,
       })),
     };
   }
@@ -320,7 +357,7 @@ export function BulkCloneWizard({
                   availabilities={activeAvailabilities}
                   resolvedNames={savedNames}
                   stepOneNames={resolvedNames}
-                  missingIds={missingIds}
+                  outcomes={outcomes}
                   onComplete={(results) => {
                     setCreationResults(results);
                     onHistoryChange(buildHistoryEntry(results));
@@ -369,6 +406,7 @@ export function BulkCloneWizard({
                     availabilities={activeAvailabilities}
                     existingNames={[]}
                     initialData={step1Data}
+                    dates={newDates}
                     onDataChange={setStep1Data}
                     onValidityChange={setStep1IsValid}
                   />

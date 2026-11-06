@@ -21,6 +21,8 @@ interface BulkHistoryPanelProps {
   availabilities: Availability[];
   /** Open one availability's page */
   onOpenAvailability: (id: string) => void;
+  /** Open on this job's details straight away (from the banner on the list) */
+  initialOpenId?: string | null;
 }
 
 const PAGE_SIZE = 10;
@@ -254,8 +256,8 @@ function EntryDetail({
         <p className="text-sm text-neutral-700">
           {count(entry.total)} named <span className="font-semibold text-neutral-900">{entry.namePattern}</span>
         </p>
-        {entry.source && line('Source', entry.source)}
-        {entry.target && line('Target', entry.target)}
+        {entry.source && line('Cloned', entry.source)}
+        {entry.target && line('New dates', entry.target)}
         {line('Results', results(entry))}
         <p className="text-sm text-neutral-700">
           Initiated by <span className="font-semibold text-neutral-900">{entry.runBy}</span> on {formatRan(entry.ranAt)}
@@ -280,14 +282,14 @@ function EntryDetail({
 
 // ── Panel ────────────────────────────────────────────────────────────────────
 
-export function BulkHistoryPanel({ entries, cloneCounts, onClose, onViewJob, availabilities, onOpenAvailability }: BulkHistoryPanelProps) {
+export function BulkHistoryPanel({ entries, cloneCounts, onClose, onViewJob, availabilities, onOpenAvailability, initialOpenId = null }: BulkHistoryPanelProps) {
   const [type, setType] = useState<string>(ALL);
   const [status, setStatus] = useState<string>(ALL);
   const [runBy, setRunBy] = useState<string>(ALL);
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [page, setPage] = useState(0);
-  const [openId, setOpenId] = useState<string | null>(null);
+  const [openId, setOpenId] = useState<string | null>(initialOpenId);
 
   const runners = useMemo(() => Array.from(new Set(entries.map((e) => e.runBy))).sort(), [entries]);
   const shown = useMemo(
@@ -437,7 +439,7 @@ export function BulkHistoryPanel({ entries, cloneCounts, onClose, onViewJob, ava
                   </p>
                   {e.source && (
                     <p className="text-sm text-neutral-700">
-                      {e.source} <span className="text-neutral-500">→</span> {e.target}
+                      {e.source} <span className="text-neutral-500">·</span> {e.target}
                     </p>
                   )}
                   {(e.type === 'Bulk Clone' || e.status !== 'Completed') && <p className="text-sm text-neutral-700">{results(e)}</p>}

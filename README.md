@@ -28,11 +28,11 @@ Opens on http://localhost:5176 (fixed port, so it can run alongside `exxat-one-b
   filters, search, selection toolbar, single-row clone.
 - No selection cap; select all works across pages.
 - Step 1: single-input `@` mention template (`@location`, `@discipline`,
-  `@program_type`, `@experience_type`), live preview of the template name only. **V3:** no `#2`/`#3` on Naming or Review, because a row's name must not depend on other pages; the backend adds the numbers at creation and the creation summary shows the final names beside the step 1 names.
+  `@program_type`, `@experience_type`, plus `@location_city`, `@location_state` and `@year_of_start_date`; no availability ID). With several locations `@location` reads "first (+2)"; city and state come from the first; the year follows the new start date from the Dates step. Live preview of the template name only. **V3:** no `#2`/`#3` on Naming or Review, because a row's name must not depend on other pages; the backend adds the numbers at creation and the creation summary shows the final names beside the step 1 names.
 - Step 2: **Roll Forward** by 3 months, 6 months or 1 year, or **Custom Date** (one start and end date applied to every availability), with per-row edits either way.
 - Step 3: review table with a sticky remove column and horizontal scroll.
 - Step 4: publish preference — same for all, or default plus per-availability overrides with rotation dates shown.
-- Progress screen, then a summary. **V3:** no field holds a clone back, the location included: an availability at an inactive location is created and published as the publish preference says, the same as the single-row copy. The only thing that can stop a clone is that its original was deleted before the run (rare): that row is skipped, with a one-line notice. The summary shows the whole batch as Published or Unpublished, plus the saved names.
+- Progress screen, then a summary. **V3 (6 Nov call with Harsha):** the backend decides at creation. An availability whose only location is inactive is not created; with several locations it is created with the active ones and the inactive ones are left out; a deleted original is skipped. Everything created is published as the publish preference says. The summary shows Selected / Created / Not created / Location left out / Names numbered; each count filters the list below, with a callout for each reason. Review shows the count in large type. Two ways for a job to report back (not mixed): the default shows progress in the wizard; open the prototype with `?creation=submit` for the submit-and-notify route (wizard closes, banner on the list, banner opens the job in Bulk Creation History).
 - Pre-validation interstitial for flagged availabilities.
 
 ## Where things live

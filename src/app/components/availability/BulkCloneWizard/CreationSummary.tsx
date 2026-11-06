@@ -1,15 +1,10 @@
 import { useMemo, useState } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
-import { Availability } from '../../../data/mockAvailabilities';
 import { Button } from '../../ui/button';
 import { FontAwesomeIcon } from '../../font-awesome-icon';
 import { PublishPreferenceCardState, statusForPreferences, todayISODate } from '../publishPreferenceData';
 import { NameChange } from './NameChange';
-
-interface CreationResult {
-  availability: Availability;
-  status: 'created' | 'missing';
-}
+import { CreationResult, wasCreated } from './backendCheck';
 
 interface CreationSummaryProps {
   results: CreationResult[];
@@ -22,11 +17,13 @@ interface CreationSummaryProps {
   onDone: () => void;
 }
 
-// Every clone gets the same publish preferences, so the whole batch is either Published or
-// Unpublished: live today, or scheduled for later / Do Not Publish. No field, the location
-// included, changes that. The one exception is rare: a clone whose original was deleted
-// before the run is not created; it gets a notice and a row, nothing more.
-// (Closed does not appear: a new clone is never closed.)
+// Every clone gets the same publish preferences, so the clones that are created are all Published
+// or all Unpublished: live today, or scheduled for later / Do Not Publish.
+// What the summary has to say is what did not go as selected: clones not created (every location
+// inactive, or the original deleted), clones created without an inactive location, and names that
+// were numbered to stay unique. Each count opens its own list below.
+
+type Filter = 'all' | 'created' | 'notCreated' | 'partial' | 'renamed';
 
 const PAGE_SIZE = 10;
 
@@ -52,6 +49,8 @@ function visibilityLine(preferences: PublishPreferenceCardState[]): { published:
   return { published, unpublished };
 }
 
+const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
 export function CreationSummary({
   results,
   resolvedNames,
@@ -60,15 +59,52 @@ export function CreationSummary({
   onDone,
 }: CreationSummaryProps) {
   const [page, setPage] = useState(1);
+  const [filter, setFilter] = useState<Filter>('all');
 
   const live = statusForPreferences(preferences) === 'Published';
   const visibility = visibilityLine(preferences);
-  const created = useMemo(() => results.filter((r) => r.status === 'created'), [results]);
-  const missing = results.length - created.length;
 
-  const pageCount = Math.max(1, Math.ceil(results.length / PAGE_SIZE));
+  const nameOf = (r: CreationResult) => resolvedNames[r.availability.id] || r.availability.name;
+  const isRenamed = (r: CreationResult) => wasCreated(r) && nameOf(r) !== (stepOneNames[r.availability.id] ?? nameOf(r));
+
+  const counts = useMemo(() => {
+    const created = results.filter(wasCreated).length;
+    return {
+      selected: results.length,
+      created,
+      notCreated: results.length - created,
+      inactive: results.filter((r) => r.outcome.kind === 'inactive').length,
+      deleted: results.filter((r) => r.outcome.kind === 'deleted').length,
+      partial: results.filter((r) => r.outcome.kind === 'partial').length,
+      renamed: results.filter(isRenamed).length,
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [results, resolvedNames, stepOneNames]);
+
+  const shown = useMemo(
+    () =>
+      results.filter((r) =>
+        filter === 'all' ? true
+        : filter === 'created' ? wasCreated(r)
+        : filter === 'notCreated' ? !wasCreated(r)
+        : filter === 'partial' ? r.outcome.kind === 'partial'
+        : isRenamed(r),
+      ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [results, filter, resolvedNames, stepOneNames],
+  );
+
+  const pageCount = Math.max(1, Math.ceil(shown.length / PAGE_SIZE));
   const currentPage = Math.min(page, pageCount);
-  const pageRows = results.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+  const pageRows = shown.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+
+  const tiles: Array<{ key: Filter; label: string; value: number; tone?: 'warn' }> = [
+    { key: 'all', label: 'Selected', value: counts.selected },
+    { key: 'created', label: 'Created', value: counts.created },
+    ...(counts.notCreated > 0 ? [{ key: 'notCreated' as const, label: 'Not created', value: counts.notCreated, tone: 'warn' as const }] : []),
+    ...(counts.partial > 0 ? [{ key: 'partial' as const, label: 'Location left out', value: counts.partial, tone: 'warn' as const }] : []),
+    ...(counts.renamed > 0 ? [{ key: 'renamed' as const, label: 'Names numbered', value: counts.renamed }] : []),
+  ];
 
   return (
     <div className="space-y-4 pt-2">
@@ -77,34 +113,90 @@ export function CreationSummary({
         <div className="flex items-center gap-2">
           <FontAwesomeIcon name="circleCheck" className="h-4 w-4 text-positive-default" aria-hidden="true" />
           <h3 className="text-sm font-semibold text-neutral-850">
-            {`${created.length} ${created.length === 1 ? 'availability' : 'availabilities'} created`}
+            {`${plural(counts.created, 'availability', 'availabilities')} created`}
           </h3>
-          <span
-            className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${live ? 'bg-positive-default/25 text-neutral-900' : 'bg-neutral-100 text-neutral-800'}`}
-          >
-            {live ? 'Published' : 'Unpublished'}
-          </span>
+          {counts.created > 0 && (
+            <span
+              className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${live ? 'bg-positive-default/25 text-neutral-900' : 'bg-neutral-100 text-neutral-800'}`}
+            >
+              {live ? 'Published' : 'Unpublished'}
+            </span>
+          )}
         </div>
-        <p className="mt-1.5 text-sm text-neutral-700">{live ? visibility.published : visibility.unpublished}</p>
-        {missing > 0 && (
-          <p className="mt-3 text-xs text-warning-default">
-            {`${missing} ${missing === 1 ? 'was' : 'were'} not created because the original was deleted before the clone ran. The rest of the batch went ahead.`}
-          </p>
+        {counts.created > 0 && (
+          <p className="mt-1.5 text-sm text-neutral-700">{live ? visibility.published : visibility.unpublished}</p>
         )}
+
+        {/* Counts: each one opens its list below */}
+        <div className="mt-3 flex flex-wrap gap-2" role="tablist" aria-label="Filter the list below">
+          {tiles.map((t) => {
+            const on = filter === t.key;
+            return (
+              <button
+                key={t.key}
+                type="button"
+                role="tab"
+                aria-selected={on}
+                onClick={() => { setFilter(t.key); setPage(1); }}
+                className={`min-w-[120px] rounded-lg border px-3 py-2 text-left transition-colors ${
+                  on ? 'border-blue-500 bg-blue-50' : 'border-neutral-200 bg-card hover:bg-neutral-50'
+                }`}
+              >
+                <span className={`block text-xl font-semibold leading-6 ${t.tone === 'warn' && t.value > 0 ? 'text-warning-default' : 'text-neutral-900'}`}>{t.value}</span>
+                <span className="block text-xs text-neutral-700">{t.label}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* What did not go as selected, and why */}
+        <div className="mt-3 space-y-1.5 text-xs">
+          {counts.inactive > 0 && (
+            <p className="text-warning-default">
+              {`${plural(counts.inactive, 'availability was', 'availabilities were')} not created because ${counts.inactive === 1 ? 'its location is' : 'their locations are'} inactive. To clone ${counts.inactive === 1 ? 'it' : 'them'}, make the location active, or clone to a different location.`}
+            </p>
+          )}
+          {counts.deleted > 0 && (
+            <p className="text-warning-default">
+              {`${plural(counts.deleted, 'availability was', 'availabilities were')} not created because the original was deleted before the clone ran. The rest of the batch went ahead.`}
+            </p>
+          )}
+          {counts.partial > 0 && (
+            <p className="text-warning-default">
+              {`${plural(counts.partial, 'availability was', 'availabilities were')} created without an inactive location. The other locations were added.`}
+            </p>
+          )}
+          {counts.renamed > 0 && (
+            <p className="text-neutral-700">
+              {`${plural(counts.renamed, 'availability with a similar name was', 'availabilities with similar names were')} found. #2, #3 and so on were added to make them unique. To change a name, open the availability and edit it.`}
+            </p>
+          )}
+        </div>
       </div>
 
-      {/* ── List: the saved names, which is what the coordinator could not see until now ── */}
+      {/* ── List ──────────────────────────────────────────────────────────── */}
       <div className="overflow-hidden rounded-xl bg-card shadow-[0_1px_1.5px_rgba(0,0,0,0.1),0_1px_1px_rgba(0,0,0,0.1)]">
-        <ul className="divide-y divide-neutral-100" aria-label="Created availabilities">
+        <ul className="divide-y divide-neutral-100" aria-label="Availabilities in this job">
           {pageRows.map((r) => {
-            const name = resolvedNames[r.availability.id] || r.availability.name;
-            const notCreated = r.status === 'missing';
+            const name = nameOf(r);
+            const notCreated = !wasCreated(r);
+            const o = r.outcome;
             return (
               <li key={r.availability.id} className="flex items-start justify-between gap-4 px-4 py-3">
                 <div className="min-w-0">
                   <span className="block text-sm text-neutral-850">{name}</span>
-                  <NameChange stepOne={stepOneNames[r.availability.id]} saved={name} />
-                  {notCreated && (
+                  {!notCreated && <NameChange stepOne={stepOneNames[r.availability.id]} saved={name} />}
+                  {o.kind === 'partial' && (
+                    <span className="mt-0.5 block text-xs text-warning-default">
+                      {`Created without ${o.leftOut.join(', ')} (inactive).`}
+                    </span>
+                  )}
+                  {o.kind === 'inactive' && (
+                    <span className="mt-0.5 block text-xs text-warning-default">
+                      {`Not created: ${o.locations.join(', ')} ${o.locations.length === 1 ? 'is' : 'are'} inactive.`}
+                    </span>
+                  )}
+                  {o.kind === 'deleted' && (
                     <span className="mt-0.5 block text-xs text-warning-default">
                       The original availability was deleted before the clone ran.
                     </span>
@@ -124,11 +216,12 @@ export function CreationSummary({
               </li>
             );
           })}
+          {pageRows.length === 0 && <li className="px-4 py-6 text-sm text-neutral-600">Nothing to show here.</li>}
         </ul>
 
-        {results.length > PAGE_SIZE && (
+        {shown.length > PAGE_SIZE && (
           <div className="flex items-center justify-end gap-2 border-t border-neutral-200 px-4 py-2.5 text-sm text-neutral-800">
-            <span>{`Page ${currentPage} of ${pageCount} (${results.length} items)`}</span>
+            <span>{`Page ${currentPage} of ${pageCount} (${shown.length} items)`}</span>
             <button
               type="button"
               aria-label="Previous page"

@@ -74,6 +74,13 @@ export function Step3Review({
   return (
     <div className="space-y-4">
 
+      {/* ── How many will be created, up front ───────────────────────────── */}
+      <div className="rounded-xl bg-card px-5 py-4 shadow-[0_1px_1.5px_rgba(0,0,0,0.1),0_1px_1px_rgba(0,0,0,0.1)]">
+        <p className="text-2xl font-semibold leading-8 text-neutral-900" aria-live="polite">
+          {`${availabilities.length} ${availabilities.length === 1 ? 'availability' : 'availabilities'} will be created`}
+        </p>
+      </div>
+
       {/* ── Inherited fields banner ───────────────────────────────────────── */}
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
         <div className="flex items-start gap-2">

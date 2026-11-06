@@ -1,4 +1,5 @@
 export { BulkCloneWizard } from './BulkCloneWizard';
+export type { SubmittedJob } from './BulkCloneWizard';
 export { Step1Naming } from './Step1Naming';
 export type { Step1Data } from './Step1Naming';
 export { Step2Dates } from './Step2Dates';

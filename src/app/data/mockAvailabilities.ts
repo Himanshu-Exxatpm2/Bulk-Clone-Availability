@@ -339,14 +339,14 @@ const baseAvailabilities: Omit<Availability, ListFields>[] = [
     status: 'Closed',    tenant: 'MedStar',
   },
   // ── Records that exercise the wizard's edge paths ──
-  // The location was marked inactive after this was posted → the clone is still created and published as the preference says
+  // The location was marked inactive after this was posted → this clone is not created; the summary says so
   {
     id: 'avail-022',
     name: 'MedStar Rehab PT - Fall 2025',
     startDate: '2025-09-02',
     endDate: '2025-12-12',
     slotCount: 2,
-    location: 'MedStar National Rehabilitation Network (Inactive)',
+    location: 'MedStar Legacy Rehabilitation Center',
     locationGroup: 'MedStar Legacy Rehab Group',
     discipline: 'Physical Therapy',
     programType: 'DPT',
@@ -368,7 +368,7 @@ const baseAvailabilities: Omit<Availability, ListFields>[] = [
     status: 'Published',    tenant: 'ATI',
     deletedBeforeRun: true,
   },
-  // Spans two locations → the Naming step asks which one @location should use
+  // Spans two locations → @location in a name reads "first location (+1)"
   {
     id: 'avail-024',
     name: 'MedStar Nursing Float Pool - Fall 2025',
@@ -376,6 +376,34 @@ const baseAvailabilities: Omit<Availability, ListFields>[] = [
     endDate: '2025-12-05',
     slotCount: 6,
     location: 'MedStar Washington Hospital Center – ICU, MedStar Georgetown University Hospital – NICU',
+    locationGroup: 'MedStar DC Metro',
+    discipline: 'Nursing',
+    programType: 'BSN',
+    experienceType: 'Group',
+    status: 'Published',    tenant: 'MedStar',
+  },
+  // Three active locations → "first location (+2)" in the name
+  {
+    id: 'avail-025',
+    name: 'ATI Outpatient PT Rotation - Spring 2026',
+    startDate: '2026-01-20',
+    endDate: '2026-05-01',
+    slotCount: 3,
+    location: 'ATI Physical Therapy – Rockville, ATI Physical Therapy – Bethesda, ATI Physical Therapy – Arlington',
+    locationGroup: 'ATI Mid-Atlantic',
+    discipline: 'Physical Therapy',
+    programType: 'DPT',
+    experienceType: 'Group',
+    status: 'Published',    tenant: 'ATI',
+  },
+  // One of two locations is inactive → created with the active one only, and the summary says so
+  {
+    id: 'avail-026',
+    name: 'MedStar Rehab Rotation - Winter 2026',
+    startDate: '2026-01-05',
+    endDate: '2026-03-27',
+    slotCount: 2,
+    location: 'MedStar Georgetown University Hospital – NICU, MedStar Legacy Rehabilitation Center',
     locationGroup: 'MedStar DC Metro',
     discipline: 'Nursing',
     programType: 'BSN',

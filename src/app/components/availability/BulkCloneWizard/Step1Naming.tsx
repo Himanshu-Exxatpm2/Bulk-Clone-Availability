@@ -1,30 +1,13 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { Availability } from '../../../data/mockAvailabilities';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '../../ui/select';
 import { FontAwesomeIcon } from '../../font-awesome-icon';
 import { TablePager, usePaging } from './TablePager';
-import {
-  TOKENS,
-  TOKEN_TO_FIELD,
-  fieldValue,
-  parseLocations,
-  resolveName,
-  unknownTokens,
-} from './naming';
+import { NewDates, TOKENS, resolveName, unknownTokens } from './naming';
 
 // ── Exported types ─────────────────────────────────────────────────────────────
 
 export interface Step1Data {
   template: string;
-  /** Names from the template. Numbers for repeats (#2, #3) are added by the backend at creation. */
-  rawNames: Record<string, string>;
-  locationOverrides: Record<string, string>;
 }
 
 // ── Props ─────────────────────────────────────────────────────────────────────
@@ -34,6 +17,8 @@ interface Step1NamingProps {
   /** Names already in the Availability list; a clone may not reuse one. */
   existingNames: string[];
   initialData: Step1Data;
+  /** The dates the clones would get now; the year of start date in the preview comes from these */
+  dates: NewDates;
   onDataChange: (data: Step1Data) => void;
   onValidityChange: (isValid: boolean) => void;
 }
@@ -44,13 +29,11 @@ export function Step1Naming({
   availabilities,
   existingNames,
   initialData,
+  dates,
   onDataChange,
   onValidityChange,
 }: Step1NamingProps) {
   const [template, setTemplate] = useState<string>(initialData.template);
-  const [locationOverrides, setLocationOverrides] = useState<Record<string, string>>(
-    initialData.locationOverrides,
-  );
   // @ dropdown state
   const [showDropdown, setShowDropdown] = useState(false);
   const [dropdownFilter, setDropdownFilter] = useState('');
@@ -62,20 +45,17 @@ export function Step1Naming({
   onValidityChangeRef.current = onValidityChange;
 
   const hasTemplate = template.trim() !== '';
-  const locationInTemplate = /@location(?!\w)/.test(template);
   const unknown = useMemo(() => unknownTokens(template), [template]);
 
   const rawNames = useMemo(() => {
     const out: Record<string, string> = {};
     for (const a of availabilities) {
-      out[a.id] = resolveName(a, template, locationOverrides);
+      out[a.id] = resolveName(a, template, dates);
     }
     return out;
-  }, [availabilities, template, locationOverrides]);
+  }, [availabilities, template, dates]);
 
   // Only an empty name is checked here. Repeats are numbered when the clones are created.
-  // The only other thing that can go wrong is an inactive location, which is found at
-  // creation; that clone is saved Unpublished.
   const rowChecks = useMemo(() => {
     const out: Record<string, { errors: string[]; warnings: string[] }> = {};
     for (const a of availabilities) {
@@ -102,8 +82,8 @@ export function Step1Naming({
 
   // Propagate step data to parent whenever anything changes
   useEffect(() => {
-    onDataChangeRef.current({ template, rawNames, locationOverrides });
-  }, [template, rawNames, locationOverrides]);
+    onDataChangeRef.current({ template });
+  }, [template]);
 
   // ── Template mutations ───────────────────────────────────────────────────
 
@@ -199,7 +179,9 @@ export function Step1Naming({
         <p className="text-xs text-neutral-600 mb-3">
           Type freely. Use <span className="font-mono bg-neutral-100 px-1 rounded">@</span> to insert
           a merge field (e.g. <span className="font-mono bg-neutral-100 px-1 rounded">@discipline</span>).
-          Add separators and season labels as plain text.
+          Add separators and season labels as plain text. With several locations, the name shows the first
+          followed by how many more, e.g. <span className="italic">Rockville (+2)</span>. Year of Start Date is the year of
+          the new start date from the Dates step; this preview uses the suggested dates until you set them.
         </p>
 
         {/* Single input bar */}
@@ -256,17 +238,17 @@ export function Step1Naming({
 
         {/* Available tokens */}
         <div className="flex flex-wrap gap-1.5 mt-3">
-          <span className="text-xs text-neutral-600 shrink-0 self-center">Available:</span>
+          <span className="text-xs text-neutral-600 shrink-0 self-center">Quick insert:</span>
           {TOKENS.map(({ token, label }) => (
             <button
               key={token}
               type="button"
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => insertToken(token, false)}
-              className="font-mono text-xs bg-blue-50 text-blue-600 border border-blue-200 px-2 py-0.5 rounded hover:bg-blue-100 transition-colors"
-              title={label}
+              className="text-xs bg-blue-50 text-blue-600 border border-blue-200 px-2 py-0.5 rounded hover:bg-blue-100 transition-colors"
+              title={token}
             >
-              {token}
+              @{label}
             </button>
           ))}
         </div>
@@ -301,8 +283,6 @@ export function Step1Naming({
           </thead>
           <tbody>
             {pageRows.map((a, idx) => {
-              const locs = parseLocations(a.location);
-              const showLocPicker = locs.length > 1 && locationInTemplate;
               const { errors } = rowChecks[a.id];
 
               return (
@@ -326,27 +306,6 @@ export function Step1Naming({
                         {unknown.length === 0 && errors.map((msg) => (
                           <p key={msg} className="mt-1 text-xs text-negative-default">{msg}</p>
                         ))}
-
-                        {/* Location picker for multi-location availabilities; stays so the pick can change */}
-                        {showLocPicker && (
-                          <div className="mt-2">
-                            <Select
-                              value={locationOverrides[a.id] ?? ''}
-                              onValueChange={(val) => setLocationOverrides((prev) => ({ ...prev, [a.id]: val }))}
-                            >
-                              <SelectTrigger size="sm" className="h-7 text-xs max-w-[280px]" aria-label={`Location for ${a.name}`}>
-                                <SelectValue placeholder="Select location (optional)" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {locs.map((loc) => (
-                                  <SelectItem key={loc} value={loc} className="text-xs">
-                                    {loc}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </div>
-                        )}
                       </div>
                     )}
                   </td>

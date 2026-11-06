@@ -47,14 +47,14 @@ function rowIsValid(startDate: string, endDate: string): boolean {
 }
 
 /** Shortest roll that puts every clone's start on or after today; 1 year if none does. */
-function defaultRollMonths(availabilities: Availability[], today: string): RollMonths {
+export function defaultRollMonths(availabilities: Availability[], today: string): RollMonths {
   const fits = ([3, 6, 12] as const).find((m) =>
     availabilities.every((a) => rollDateByMonths(a.startDate, m) >= today),
   );
   return fits ?? 12;
 }
 
-function rolledDates(availabilities: Availability[], months: number) {
+export function rolledDates(availabilities: Availability[], months: number) {
   const out: Record<string, { startDate: string; endDate: string }> = {};
   for (const a of availabilities) {
     out[a.id] = {

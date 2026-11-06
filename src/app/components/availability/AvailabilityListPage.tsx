@@ -47,7 +47,7 @@ import {
   SCROLL_COLUMNS,
   SortState,
 } from './AvailabilityListTable';
-import { BulkCloneWizard } from './BulkCloneWizard';
+import { BulkCloneWizard, SubmittedJob } from './BulkCloneWizard';
 import { BulkHistoryPanel } from './BulkHistoryPanel';
 import { HistoryEntry } from '../../data/bulkHistory';
 import { Availability } from '../../data/mockAvailabilities';
@@ -298,10 +298,39 @@ export function AvailabilityListPage({ currentPath, onNavigate }: AvailabilityLi
   const [historyOpen, setHistoryOpen] = useState(false);
   // Set when the list is opened from a history entry: shows only the clones that job made
   const [jobFilter, setJobFilter] = useState<string | null>(null);
+  // Submit mode only: the job running behind the scenes, then how it ended. The banner opens the job in history.
+  const [jobBanner, setJobBanner] = useState<{ phase: 'running' | 'done'; jobId: string; tone?: 'ok' | 'issues'; text: string } | null>(null);
+  const [historyOpenId, setHistoryOpenId] = useState<string | null>(null);
 
   // Every job is kept in Bulk Creation History, whatever its outcome; an entry is replaced as it progresses
   const upsertHistory = (entry: HistoryEntry) =>
     setHistory((prev) => (prev.some((h) => h.id === entry.id) ? prev.map((h) => (h.id === entry.id ? entry : h)) : [entry, ...prev]));
+
+  // The wizard has closed: the job runs behind the scenes and the list says so until it ends
+  const submitJob = (job: SubmittedJob) => {
+    upsertHistory(job.progressEntry);
+    setJobBanner({
+      phase: 'running',
+      jobId: job.progressEntry.id,
+      text: 'Your bulk clone request has been submitted. Bulk creation is underway. Please do not make any changes until it completes. We appreciate your patience.',
+    });
+    setWizardOpen(false);
+    handleClearAll();
+    window.setTimeout(() => {
+      if (job.created.length > 0) setAvailabilities((prev) => [...job.created, ...prev]);
+      upsertHistory(job.finalEntry);
+      const { created, failed, total } = job.finalEntry;
+      const issues = failed > 0;
+      setJobBanner({
+        phase: 'done',
+        jobId: job.finalEntry.id,
+        tone: issues ? 'issues' : 'ok',
+        text: issues
+          ? `Bulk clone finished: ${created} of ${total} created, ${failed} not created. Click to see the details.`
+          : `Bulk clone completed: all ${total} availabilities were created. Click to see the details.`,
+      });
+    }, 4000);
+  };
 
   const tabFiltered = useMemo<Availability[]>(
     () =>
@@ -429,6 +458,7 @@ export function AvailabilityListPage({ currentPath, onNavigate }: AvailabilityLi
           removalLocked={allPagesSelected}
           existingNames={availabilities.map((a) => a.name)}
           onHistoryChange={upsertHistory}
+          onSubmitJob={submitJob}
           // Closing without creating keeps the selection, so the coordinator can reopen it
           onClose={() => setWizardOpen(false)}
           onCloneComplete={(newOnes, entry) => {
@@ -469,7 +499,8 @@ export function AvailabilityListPage({ currentPath, onNavigate }: AvailabilityLi
           cloneCounts={cloneCounts}
           availabilities={availabilities}
           onOpenAvailability={(id) => onNavigate(`/internships/${id}`)}
-          onClose={() => setHistoryOpen(false)}
+          initialOpenId={historyOpenId}
+          onClose={() => { setHistoryOpen(false); setHistoryOpenId(null); }}
           onViewJob={(id) => {
             setJobFilter(id);
             setHistoryOpen(false);
@@ -477,6 +508,23 @@ export function AvailabilityListPage({ currentPath, onNavigate }: AvailabilityLi
             onNavigate(TAB_ROUTES.All);
           }}
         />
+      )}
+
+      {jobBanner && (
+        <button
+          type="button"
+          onClick={() => { setHistoryOpenId(jobBanner.jobId); setHistoryOpen(true); if (jobBanner.phase === 'done') setJobBanner(null); }}
+          className={`block w-full border-b px-6 py-2.5 text-left text-sm ${
+            jobBanner.phase === 'running'
+              ? 'border-blue-200 bg-blue-50 text-blue-900'
+              : jobBanner.tone === 'issues'
+              ? 'border-red-200 bg-red-50 text-neutral-900'
+              : 'border-green-200 bg-green-50 text-neutral-900'
+          }`}
+          role="status"
+        >
+          {jobBanner.text}
+        </button>
       )}
 
       {/* Page header */}

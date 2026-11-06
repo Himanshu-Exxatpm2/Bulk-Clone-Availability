@@ -1,14 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
 import { Availability } from '../../../data/mockAvailabilities';
+import { CloneOutcome, CreationResult } from './backendCheck';
 import { FontAwesomeIcon } from '../../font-awesome-icon';
 import { NameChange } from './NameChange';
 
-type RowStatus = 'pending' | 'inprogress' | 'created' | 'missing';
-
-interface CreationResult {
-  availability: Availability;
-  status: 'created' | 'missing';
-}
+type RowStatus = 'pending' | 'inprogress' | 'created' | 'partial' | 'notCreated';
 
 interface CreationProgressProps {
   availabilities: Availability[];
@@ -16,8 +12,8 @@ interface CreationProgressProps {
   resolvedNames: Record<string, string>;
   /** Names the coordinator saw in step 1 (template name, no numbers). */
   stepOneNames: Record<string, string>;
-  /** Sources deleted before the clone ran; these are skipped, not created */
-  missingIds: string[];
+  /** What the backend does with each clone: created, created without an inactive location, or not created */
+  outcomes: Record<string, CloneOutcome>;
   onComplete: (results: CreationResult[]) => void;
 }
 
@@ -27,7 +23,7 @@ export function CreationProgress({
   availabilities,
   resolvedNames,
   stepOneNames,
-  missingIds,
+  outcomes,
   onComplete,
 }: CreationProgressProps) {
   const [rowStatuses, setRowStatuses] = useState<Record<string, RowStatus>>(() => {
@@ -62,12 +58,10 @@ export function CreationProgress({
         await delay(350);
         if (cancelled) return;
 
-        const missing = missingIds.includes(a.id);
-        const rowStatus: RowStatus = missing ? 'missing' : 'created';
-
-        statuses[a.id] = rowStatus;
+        const outcome = outcomes[a.id] ?? { kind: 'created' as const };
+        statuses[a.id] = outcome.kind === 'created' ? 'created' : outcome.kind === 'partial' ? 'partial' : 'notCreated';
         setRowStatuses({ ...statuses });
-        results.push({ availability: a, status: missing ? 'missing' : 'created' });
+        results.push({ availability: a, outcome });
 
         await delay(100);
       }
@@ -84,7 +78,7 @@ export function CreationProgress({
 
   const total = availabilities.length;
   const completedCount = Object.values(rowStatuses).filter(
-    (s) => s === 'created' || s === 'missing',
+    (s) => s === 'created' || s === 'partial' || s === 'notCreated',
   ).length;
   const progressPct = total > 0 ? (completedCount / total) * 100 : 0;
 
@@ -125,10 +119,10 @@ export function CreationProgress({
                 {status === 'inprogress' && (
                   <FontAwesomeIcon name="spinner" className="w-4 h-4 text-blue-500 animate-spin" aria-hidden="true" />
                 )}
-                {status === 'created' && (
+                {(status === 'created' || status === 'partial') && (
                   <FontAwesomeIcon name="circleCheck" className="w-4 h-4 text-positive-default" aria-hidden="true" />
                 )}
-                {status === 'missing' && (
+                {status === 'notCreated' && (
                   <span
                     className="inline-flex w-4 h-4 items-center justify-center rounded-full bg-accent-100 text-warning-default text-xs font-bold leading-none"
                     aria-label="Not created"
@@ -138,11 +132,16 @@ export function CreationProgress({
                 )}
               </div>
 
-              {/* Name, plus why it was saved as unpublished */}
+              {/* Name, plus why it was left out or trimmed */}
               <div className="flex-1 min-w-0">
                 <span className="block text-sm text-neutral-850 truncate">{name}</span>
                 <NameChange stepOne={stepOneNames[a.id]} saved={name} />
-                {status === 'missing' && <span className="block text-xs text-warning-default">The original no longer exists</span>}
+                {status === 'partial' && <span className="block text-xs text-warning-default">Created without its inactive location</span>}
+                {status === 'notCreated' && (
+                  <span className="block text-xs text-warning-default">
+                    {outcomes[a.id]?.kind === 'inactive' ? 'Its location is inactive' : 'The original no longer exists'}
+                  </span>
+                )}
               </div>
 
               {/* Status label */}
@@ -152,13 +151,14 @@ export function CreationProgress({
                   status === 'pending'    ? 'text-neutral-600' : '',
                   status === 'inprogress' ? 'text-blue-500' : '',
                   status === 'created'    ? 'text-positive-default' : '',
-                  status === 'missing'    ? 'text-warning-default' : '',
+                  (status === 'notCreated' || status === 'partial') ? 'text-warning-default' : '',
                 ].join(' ')}
               >
                 {status === 'pending'    && 'Waiting…'}
                 {status === 'inprogress' && 'Creating…'}
                 {status === 'created'    && 'Created'}
-                {status === 'missing'    && 'Not created'}
+                {status === 'partial'    && 'Created, location left out'}
+                {status === 'notCreated' && 'Not created'}
               </span>
             </div>
           );

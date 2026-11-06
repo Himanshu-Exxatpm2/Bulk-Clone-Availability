@@ -1,14 +1,27 @@
 import { Availability } from '../../../data/mockAvailabilities';
+import { locationInfo } from '../../../data/locations';
 
-// Naming rules shared by the Naming step (preview) and the wizard (final names
-// and draft reasons).
+// Naming rules shared by the Naming step (preview) and the wizard (final names).
 // Final names are always worked out from the rows still in the batch, so removing
 // a row in Review re-numbers the rest instead of leaving an orphan "#2".
 
-export type FieldName = 'location' | 'discipline' | 'programType' | 'experienceType';
+export type FieldName =
+  | 'location'
+  | 'locationCity'
+  | 'locationState'
+  | 'yearOfStartDate'
+  | 'discipline'
+  | 'programType'
+  | 'experienceType';
+
+/** The new dates the clones will get, by availability id. The year of start date comes from here. */
+export type NewDates = Record<string, { startDate: string; endDate: string }>;
 
 export const TOKENS: Array<{ token: string; label: string; field: FieldName }> = [
-  { token: '@location',        label: 'Location',        field: 'location' },
+  { token: '@location',        label: 'Location Name',   field: 'location' },
+  { token: '@location_city',   label: 'Location City',   field: 'locationCity' },
+  { token: '@location_state',  label: 'Location State',  field: 'locationState' },
+  { token: '@year_of_start_date', label: 'Year of Start Date', field: 'yearOfStartDate' },
   { token: '@discipline',      label: 'Discipline',      field: 'discipline' },
   { token: '@program_type',    label: 'Program Type',    field: 'programType' },
   { token: '@experience_type', label: 'Experience Type', field: 'experienceType' },
@@ -25,21 +38,37 @@ export function parseLocations(location: string): string[] {
   return location.split(',').map((s) => s.trim()).filter(Boolean);
 }
 
-export function fieldValue(
-  a: Availability,
-  field: FieldName,
-  locationOverrides: Record<string, string>,
-): string {
+/** Locations the clone will keep: inactive ones are left out, unless that would leave none. */
+export function keptLocations(location: string): string[] {
+  const all = parseLocations(location);
+  const active = all.filter((l) => locationInfo(l).active);
+  return active.length > 0 ? active : all;
+}
+
+/** "A" for one, "A (+2)" when more follow. Used for several locations. */
+function firstWithMore(values: string[]): string {
+  if (values.length === 0) return '';
+  return values.length === 1 ? values[0] : `${values[0]} (+${values.length - 1})`;
+}
+
+/** Up to 3 values are spelled out; beyond that "A (+n)". Used for several disciplines. */
+function spelledOrMore(values: string[]): string {
+  return values.length <= 3 ? values.join(', ') : firstWithMore(values);
+}
+
+export function fieldValue(a: Availability, field: FieldName, dates?: NewDates): string {
+  const locs = keptLocations(a.location);
   switch (field) {
-    case 'location': {
-      const locs = parseLocations(a.location);
-      if (locs.length === 1) return locs[0];
-      // No pick on a multi-location availability: use the location exactly as it was
-      return locs.length > 1 ? locationOverrides[a.id] ?? a.location : '';
-    }
-    case 'discipline':     return a.discipline ?? '';
-    case 'programType':    return a.programType ?? '';
-    case 'experienceType': return a.experienceType ?? '';
+    // Several locations: the first, then how many more. City and state are not suffixed (they are
+    // almost always shared), so they come from the first location.
+    case 'location':        return firstWithMore(locs);
+    case 'locationCity':    return locs[0] ? locationInfo(locs[0]).city : '';
+    case 'locationState':   return locs[0] ? locationInfo(locs[0]).state : '';
+    // The year the clone starts, so it follows the dates chosen in the Dates step
+    case 'yearOfStartDate': return (dates?.[a.id]?.startDate ?? a.startDate).slice(0, 4);
+    case 'discipline':      return spelledOrMore(parseLocations(a.discipline ?? ''));
+    case 'programType':     return a.programType ?? '';
+    case 'experienceType':  return a.experienceType ?? '';
   }
 }
 
@@ -65,34 +94,14 @@ export function unknownTokens(template: string): string[] {
   return Array.from(new Set((template.match(TOKEN_PATTERN) ?? []).filter((t) => !TOKEN_TO_FIELD[t])));
 }
 
-export function resolveName(
-  a: Availability,
-  template: string,
-  locationOverrides: Record<string, string>,
-): string {
+export function resolveName(a: Availability, template: string, dates?: NewDates): string {
   if (!template.trim()) return '';
   return cleanName(
     template.replace(TOKEN_PATTERN, (tok) => {
       const field = TOKEN_TO_FIELD[tok];
-      return field ? fieldValue(a, field, locationOverrides) : tok;
+      return field ? fieldValue(a, field, dates) : tok;
     }),
   );
-}
-
-/**
- * Labels of fields in the template that have no value on this availability
- * (e.g. no location was picked for a multi-location availability).
- */
-export function blankFields(
-  a: Availability,
-  template: string,
-  locationOverrides: Record<string, string>,
-): string[] {
-  const used = Array.from(new Set(template.match(TOKEN_PATTERN) ?? []));
-  return used
-    .filter((t) => TOKEN_TO_FIELD[t])
-    .filter((t) => fieldValue(a, TOKEN_TO_FIELD[t], locationOverrides) === '')
-    .map((t) => TOKENS.find((x) => x.token === t)!.label);
 }
 
 export interface FinalName {
