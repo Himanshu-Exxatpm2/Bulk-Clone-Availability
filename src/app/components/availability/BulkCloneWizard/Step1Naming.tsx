@@ -294,11 +294,8 @@ export function Step1Naming({
               <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-neutral-700 border-b border-neutral-200 w-[30%]">
                 Original Name
               </th>
-              <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-neutral-700 border-b border-neutral-200 w-[38%]">
+              <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-neutral-700 border-b border-neutral-200 w-[70%]">
                 New Name
-              </th>
-              <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-neutral-700 border-b border-neutral-200 w-[32%]">
-                Check
               </th>
             </tr>
           </thead>
@@ -306,7 +303,7 @@ export function Step1Naming({
             {pageRows.map((a, idx) => {
               const locs = parseLocations(a.location);
               const showLocPicker = locs.length > 1 && locationInTemplate;
-              const { errors, warnings } = rowChecks[a.id];
+              const { errors } = rowChecks[a.id];
 
               return (
                 <tr key={a.id} className={idx % 2 === 0 ? 'bg-card' : 'bg-neutral-50/40'}>
@@ -325,6 +322,10 @@ export function Step1Naming({
                           {/* The cleaned name, exactly as it will be saved */}
                           <span className="text-neutral-850">{rawNames[a.id] || '—'}</span>
                         </div>
+                        {/* The only thing checked here is an empty name; there is no Check column */}
+                        {unknown.length === 0 && errors.map((msg) => (
+                          <p key={msg} className="mt-1 text-xs text-negative-default">{msg}</p>
+                        ))}
 
                         {/* Location picker for multi-location availabilities; stays so the pick can change */}
                         {showLocPicker && (
@@ -350,25 +351,6 @@ export function Step1Naming({
                     )}
                   </td>
 
-                  {/* Check */}
-                  <td className="px-4 py-3 border-b border-neutral-100 align-top">
-                    {hasTemplate && unknown.length === 0 && (
-                      <div className="space-y-1.5">
-                        {errors.map((msg) => (
-                          <p key={msg} className="flex items-start gap-1.5 text-xs text-negative-default">
-                            <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-negative-default" />
-                            {msg}
-                          </p>
-                        ))}
-                        {errors.length === 0 && (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-positive-default/10 border border-positive-default/30 text-positive-default text-xs font-medium">
-                            <span className="w-1.5 h-1.5 rounded-full bg-positive-default flex-shrink-0" />
-                            Ready
-                          </span>
-                        )}
-                      </div>
-                    )}
-                  </td>
                 </tr>
               );
             })}

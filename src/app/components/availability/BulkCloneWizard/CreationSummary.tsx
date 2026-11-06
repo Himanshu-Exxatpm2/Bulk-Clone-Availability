@@ -4,14 +4,11 @@ import { Availability } from '../../../data/mockAvailabilities';
 import { Button } from '../../ui/button';
 import { FontAwesomeIcon } from '../../font-awesome-icon';
 import { PublishPreferenceCardState, statusForPreferences, todayISODate } from '../publishPreferenceData';
-import { DraftIssue } from './backendCheck';
-import { IssueList } from './IssueList';
 import { NameChange } from './NameChange';
 
 interface CreationResult {
   availability: Availability;
-  status: 'created' | 'draft';
-  issues?: DraftIssue[];
+  status: 'created' | 'missing';
 }
 
 interface CreationSummaryProps {
@@ -25,13 +22,11 @@ interface CreationSummaryProps {
   onDone: () => void;
 }
 
-// ── Where each clone ended up ─────────────────────────────────────────────────
-// Published    created and visible to at least one audience today
-// Unpublished  created but not live yet: scheduled for later, or Do Not Publish
-// Issues       the system could not create it as asked; saved as Unpublished with the problem and fix
+// Every clone gets the same publish preferences, so the whole batch is either Published or
+// Unpublished: live today, or scheduled for later / Do Not Publish. No field, the location
+// included, changes that. The one exception is rare: a clone whose original was deleted
+// before the run is not created; it gets a notice and a row, nothing more.
 // (Closed does not appear: a new clone is never closed.)
-type Outcome = 'published' | 'unpublished' | 'issues';
-type TabKey = 'all' | Outcome;
 
 const PAGE_SIZE = 10;
 
@@ -57,17 +52,6 @@ function visibilityLine(preferences: PublishPreferenceCardState[]): { published:
   return { published, unpublished };
 }
 
-const PILL: Record<Outcome, string> = {
-  published: 'bg-positive-default/25 text-neutral-900',
-  unpublished: 'bg-neutral-100 text-neutral-800',
-  issues: 'bg-accent-100 text-neutral-900',
-};
-const PILL_LABEL: Record<Outcome, string> = {
-  published: 'Published',
-  unpublished: 'Unpublished',
-  issues: 'Unpublished',
-};
-
 export function CreationSummary({
   results,
   resolvedNames,
@@ -75,40 +59,16 @@ export function CreationSummary({
   preferences,
   onDone,
 }: CreationSummaryProps) {
-  const [tab, setTab] = useState<TabKey>('all');
   const [page, setPage] = useState(1);
 
-  const rows = useMemo(() => {
-    const live = statusForPreferences(preferences) === 'Published';
-    return results.map((r) => ({
-      result: r,
-      outcome: (r.status === 'draft' ? 'issues' : live ? 'published' : 'unpublished') as Outcome,
-    }));
-  }, [results, preferences]);
-
-  const counts = {
-    all: rows.length,
-    published: rows.filter((r) => r.outcome === 'published').length,
-    // An inactive location also leaves the clone Unpublished, so it counts here and under Issues
-    unpublished: rows.filter((r) => r.outcome !== 'published').length,
-    issues: rows.filter((r) => r.outcome === 'issues').length,
-  };
-  // Every clone is created; a problem only keeps it from being published
-  const created = counts.all;
+  const live = statusForPreferences(preferences) === 'Published';
   const visibility = visibilityLine(preferences);
+  const created = useMemo(() => results.filter((r) => r.status === 'created'), [results]);
+  const missing = results.length - created.length;
 
-  const shown =
-    tab === 'all' ? rows : tab === 'unpublished' ? rows.filter((r) => r.outcome !== 'published') : rows.filter((r) => r.outcome === tab);
-  const pageCount = Math.max(1, Math.ceil(shown.length / PAGE_SIZE));
+  const pageCount = Math.max(1, Math.ceil(results.length / PAGE_SIZE));
   const currentPage = Math.min(page, pageCount);
-  const pageRows = shown.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
-
-  const TABS: Array<{ key: TabKey; label: string }> = [
-    { key: 'all', label: 'All' },
-    { key: 'published', label: 'Published' },
-    { key: 'unpublished', label: 'Unpublished' },
-    { key: 'issues', label: 'Issues' },
-  ];
+  const pageRows = results.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
 
   return (
     <div className="space-y-4 pt-2">
@@ -117,108 +77,58 @@ export function CreationSummary({
         <div className="flex items-center gap-2">
           <FontAwesomeIcon name="circleCheck" className="h-4 w-4 text-positive-default" aria-hidden="true" />
           <h3 className="text-sm font-semibold text-neutral-850">
-            {`${created} of ${counts.all} ${counts.all === 1 ? 'availability' : 'availabilities'} created`}
+            {`${created.length} ${created.length === 1 ? 'availability' : 'availabilities'} created`}
           </h3>
+          <span
+            className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${live ? 'bg-positive-default/25 text-neutral-900' : 'bg-neutral-100 text-neutral-800'}`}
+          >
+            {live ? 'Published' : 'Unpublished'}
+          </span>
         </div>
-        <dl className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
-          {[
-            { label: 'Total', value: counts.all, tab: 'all' as TabKey },
-            { label: 'Published', value: counts.published, tab: 'published' as TabKey },
-            { label: 'Unpublished', value: counts.unpublished, tab: 'unpublished' as TabKey },
-            { label: 'Issues', value: counts.issues, tab: 'issues' as TabKey },
-          ].map((s) => (
-            <button
-              key={s.label}
-              type="button"
-              onClick={() => {
-                setTab(s.tab);
-                setPage(1);
-              }}
-              className="rounded-lg border border-neutral-200 px-3 py-2 text-left hover:border-blue-500"
-            >
-              <dt className="text-xs text-neutral-700">{s.label}</dt>
-              <dd className={`text-xl font-semibold ${s.label === 'Issues' && s.value > 0 ? 'text-warning-default' : 'text-neutral-900'}`}>
-                {s.value}
-              </dd>
-            </button>
-          ))}
-        </dl>
-        {counts.issues > 0 && (
+        <p className="mt-1.5 text-sm text-neutral-700">{live ? visibility.published : visibility.unpublished}</p>
+        {missing > 0 && (
           <p className="mt-3 text-xs text-warning-default">
-            {`${counts.issues} ${counts.issues === 1 ? 'was' : 'were'} not published because the location is inactive. ${counts.issues === 1 ? 'It stays' : 'They stay'} Unpublished until you fix the location and change the publish preference. Open the Issues tab for how to fix it.`}
+            {`${missing} ${missing === 1 ? 'was' : 'were'} not created because the original was deleted before the clone ran. The rest of the batch went ahead.`}
           </p>
         )}
       </div>
 
-      {/* ── Tabs and list ─────────────────────────────────────────────────── */}
+      {/* ── List: the saved names, which is what the coordinator could not see until now ── */}
       <div className="overflow-hidden rounded-xl bg-card shadow-[0_1px_1.5px_rgba(0,0,0,0.1),0_1px_1px_rgba(0,0,0,0.1)]">
-        <div role="tablist" aria-label="Created availabilities" className="flex gap-1 border-b border-neutral-200 px-3">
-          {TABS.map((t) => {
-            const active = tab === t.key;
+        <ul className="divide-y divide-neutral-100" aria-label="Created availabilities">
+          {pageRows.map((r) => {
+            const name = resolvedNames[r.availability.id] || r.availability.name;
+            const notCreated = r.status === 'missing';
             return (
-              <button
-                key={t.key}
-                type="button"
-                role="tab"
-                aria-selected={active}
-                onClick={() => {
-                  setTab(t.key);
-                  setPage(1);
-                }}
-                className={[
-                  'relative px-3 py-2.5 text-sm font-medium transition-colors',
-                  active ? 'text-blue-600' : 'text-neutral-700 hover:text-neutral-900',
-                ].join(' ')}
-              >
-                {`${t.label} (${counts[t.key]})`}
-                {active && <span className="absolute inset-x-2 bottom-0 h-0.5 rounded bg-blue-500" />}
-              </button>
+              <li key={r.availability.id} className="flex items-start justify-between gap-4 px-4 py-3">
+                <div className="min-w-0">
+                  <span className="block text-sm text-neutral-850">{name}</span>
+                  <NameChange stepOne={stepOneNames[r.availability.id]} saved={name} />
+                  {notCreated && (
+                    <span className="mt-0.5 block text-xs text-warning-default">
+                      The original availability was deleted before the clone ran.
+                    </span>
+                  )}
+                </div>
+                {notCreated ? (
+                  <span className="shrink-0 rounded-full bg-negative-default/15 px-2.5 py-0.5 text-xs font-medium text-neutral-900">Not created</span>
+                ) : (
+                  <button
+                    type="button"
+                    className="shrink-0 text-xs text-blue-500 hover:underline"
+                    onClick={() => console.log('View availability:', r.availability.id)}
+                  >
+                    View
+                  </button>
+                )}
+              </li>
             );
           })}
-        </div>
+        </ul>
 
-        {pageRows.length === 0 ? (
-          <p className="px-4 py-8 text-center text-sm text-neutral-600">
-            {tab === 'issues' ? 'No issues. Nothing is held back from publishing.' : 'Nothing here.'}
-          </p>
-        ) : (
-          <ul className="divide-y divide-neutral-100" role="tabpanel">
-            {pageRows.map(({ result: r, outcome }) => {
-              const name = resolvedNames[r.availability.id] || r.availability.name;
-              return (
-                <li key={r.availability.id} className="flex items-start justify-between gap-4 px-4 py-3">
-                  <div className="min-w-0">
-                    <span className="block text-sm text-neutral-850">{name}</span>
-                    <NameChange stepOne={stepOneNames[r.availability.id]} saved={name} />
-                    {outcome === 'issues' && r.issues ? (
-                      <IssueList issues={r.issues} />
-                    ) : (
-                      <span className="mt-0.5 block text-xs text-neutral-600">
-                        {outcome === 'published' ? visibility.published : visibility.unpublished}
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex shrink-0 items-center gap-3">
-                    <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${PILL[outcome]}`}>
-                      {PILL_LABEL[outcome]}
-                    </span>
-                    <button
-                      type="button"
-                      className="text-xs text-blue-500 hover:underline"
-                      onClick={() => console.log('View availability:', r.availability.id)}
-                    >
-                      View
-                    </button>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-
-        {shown.length > PAGE_SIZE && (
+        {results.length > PAGE_SIZE && (
           <div className="flex items-center justify-end gap-2 border-t border-neutral-200 px-4 py-2.5 text-sm text-neutral-800">
-            <span>{`Page ${currentPage} of ${pageCount} (${shown.length} items)`}</span>
+            <span>{`Page ${currentPage} of ${pageCount} (${results.length} items)`}</span>
             <button
               type="button"
               aria-label="Previous page"

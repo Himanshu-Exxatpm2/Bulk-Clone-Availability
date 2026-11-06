@@ -25,8 +25,8 @@ export interface Availability {
   requestedSlots: number;
   specializations: string[]; // Discipline/Specialization column: discipline first, then specializations
   programTypes: string[];    // Program Type column: full program names
-  /** Prototype only: the location is inactive, which the backend finds when the clone is created. */
-  locationInactive?: boolean;
+  /** Prototype only: someone deletes this availability (or its location) after it was selected, before the clone runs. */
+  deletedBeforeRun?: boolean;
   /** Set on an availability created by Bulk Clone; drives the info icon in the list. */
   clonedFrom?: { batchId: string; sourceName: string; clonedOn: string; clonedBy: string };
   /** Publish Options shown on the availability page; set on clones, derived for the rest */
@@ -339,7 +339,7 @@ const baseAvailabilities: Omit<Availability, ListFields>[] = [
     status: 'Closed',    tenant: 'MedStar',
   },
   // ── Records that exercise the wizard's edge paths ──
-  // The location was marked inactive after this was posted → the clone is saved Unpublished
+  // The location was marked inactive after this was posted → the clone is still created and published as the preference says
   {
     id: 'avail-022',
     name: 'MedStar Rehab PT - Fall 2025',
@@ -352,9 +352,8 @@ const baseAvailabilities: Omit<Availability, ListFields>[] = [
     programType: 'DPT',
     experienceType: 'Individual',
     status: 'Published',    tenant: 'MedStar',
-    locationInactive: true,
   },
-  // Nothing to flag here: only the location can stop a clone from publishing
+  // Deleted by someone else while the wizard is open → the clone is not created ("source no longer exists")
   {
     id: 'avail-023',
     name: 'ATI Pediatric OT - Spring 2026',
@@ -367,6 +366,7 @@ const baseAvailabilities: Omit<Availability, ListFields>[] = [
     programType: 'MOT',
     experienceType: 'Individual',
     status: 'Published',    tenant: 'ATI',
+    deletedBeforeRun: true,
   },
   // Spans two locations → the Naming step asks which one @location should use
   {
@@ -432,9 +432,9 @@ export function newAvailabilityId(): string {
 
 // Prototype only: 100 more rows built from the records above, so the list runs to
 // several pages and "select all across all pages" has something to work on. Fully
-// deterministic; the flagged demo record (inactive location) is not repeated.
+// deterministic; the record flagged as deleted before the run is not repeated.
 const generatedAvailabilities: Omit<Availability, ListFields>[] = (() => {
-  const templates = baseAvailabilities.filter((a) => !a.locationInactive);
+  const templates = baseAvailabilities.filter((a) => !a.deletedBeforeRun);
   return Array.from({ length: 100 }, (_, n) => {
     const t = templates[n % templates.length];
     const round = Math.floor(n / templates.length);

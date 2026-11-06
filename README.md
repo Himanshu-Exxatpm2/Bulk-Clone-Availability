@@ -32,7 +32,7 @@ Opens on http://localhost:5176 (fixed port, so it can run alongside `exxat-one-b
 - Step 2: **Roll Forward** by 3 months, 6 months or 1 year, or **Custom Date** (one start and end date applied to every availability), with per-row edits either way.
 - Step 3: review table with a sticky remove column and horizontal scroll.
 - Step 4: publish preference — same for all, or default plus per-availability overrides with rotation dates shown.
-- Progress screen, then a summary. **V3:** the only thing that can hold a clone back is an inactive location; that clone is created Unpublished with the reason and how to fix it, and stays Unpublished until the location is fixed and the publish preference changed. No other field (location group, discipline, program type, experience type) is checked.
+- Progress screen, then a summary. **V3:** no field holds a clone back, the location included: an availability at an inactive location is created and published as the publish preference says, the same as the single-row copy. The only thing that can stop a clone is that its original was deleted before the run (rare): that row is skipped, with a one-line notice. The summary shows the whole batch as Published or Unpublished, plus the saved names.
 - Pre-validation interstitial for flagged availabilities.
 
 ## Where things live

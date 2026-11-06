@@ -1,16 +1,13 @@
 import { useState, useEffect, useRef } from 'react';
 import { Availability } from '../../../data/mockAvailabilities';
 import { FontAwesomeIcon } from '../../font-awesome-icon';
-import { DraftIssue } from './backendCheck';
-import { IssueList } from './IssueList';
 import { NameChange } from './NameChange';
 
-type RowStatus = 'pending' | 'inprogress' | 'created' | 'draft';
+type RowStatus = 'pending' | 'inprogress' | 'created' | 'missing';
 
 interface CreationResult {
   availability: Availability;
-  status: 'created' | 'draft';
-  issues?: DraftIssue[];
+  status: 'created' | 'missing';
 }
 
 interface CreationProgressProps {
@@ -19,8 +16,8 @@ interface CreationProgressProps {
   resolvedNames: Record<string, string>;
   /** Names the coordinator saw in step 1 (template name, no numbers). */
   stepOneNames: Record<string, string>;
-  /** What the backend rejected, per availability; those are saved as Unpublished. */
-  draftIssues: Record<string, DraftIssue[]>;
+  /** Sources deleted before the clone ran; these are skipped, not created */
+  missingIds: string[];
   onComplete: (results: CreationResult[]) => void;
 }
 
@@ -30,7 +27,7 @@ export function CreationProgress({
   availabilities,
   resolvedNames,
   stepOneNames,
-  draftIssues,
+  missingIds,
   onComplete,
 }: CreationProgressProps) {
   const [rowStatuses, setRowStatuses] = useState<Record<string, RowStatus>>(() => {
@@ -65,13 +62,12 @@ export function CreationProgress({
         await delay(350);
         if (cancelled) return;
 
-        const issues = draftIssues[a.id];
-        const toDraft = !!issues;
-        const rowStatus: RowStatus = toDraft ? 'draft' : 'created';
+        const missing = missingIds.includes(a.id);
+        const rowStatus: RowStatus = missing ? 'missing' : 'created';
 
         statuses[a.id] = rowStatus;
         setRowStatuses({ ...statuses });
-        results.push({ availability: a, status: toDraft ? 'draft' : 'created', issues });
+        results.push({ availability: a, status: missing ? 'missing' : 'created' });
 
         await delay(100);
       }
@@ -88,7 +84,7 @@ export function CreationProgress({
 
   const total = availabilities.length;
   const completedCount = Object.values(rowStatuses).filter(
-    (s) => s === 'created' || s === 'draft',
+    (s) => s === 'created' || s === 'missing',
   ).length;
   const progressPct = total > 0 ? (completedCount / total) * 100 : 0;
 
@@ -132,10 +128,10 @@ export function CreationProgress({
                 {status === 'created' && (
                   <FontAwesomeIcon name="circleCheck" className="w-4 h-4 text-positive-default" aria-hidden="true" />
                 )}
-                {status === 'draft' && (
+                {status === 'missing' && (
                   <span
                     className="inline-flex w-4 h-4 items-center justify-center rounded-full bg-accent-100 text-warning-default text-xs font-bold leading-none"
-                    aria-label="Saved as unpublished"
+                    aria-label="Not created"
                   >
                     !
                   </span>
@@ -146,7 +142,7 @@ export function CreationProgress({
               <div className="flex-1 min-w-0">
                 <span className="block text-sm text-neutral-850 truncate">{name}</span>
                 <NameChange stepOne={stepOneNames[a.id]} saved={name} />
-                {status === 'draft' && draftIssues[a.id] && <IssueList issues={draftIssues[a.id]} />}
+                {status === 'missing' && <span className="block text-xs text-warning-default">The original no longer exists</span>}
               </div>
 
               {/* Status label */}
@@ -156,13 +152,13 @@ export function CreationProgress({
                   status === 'pending'    ? 'text-neutral-600' : '',
                   status === 'inprogress' ? 'text-blue-500' : '',
                   status === 'created'    ? 'text-positive-default' : '',
-                  status === 'draft'      ? 'text-warning-default' : '',
+                  status === 'missing'    ? 'text-warning-default' : '',
                 ].join(' ')}
               >
                 {status === 'pending'    && 'Waiting…'}
                 {status === 'inprogress' && 'Creating…'}
                 {status === 'created'    && 'Created'}
-                {status === 'draft'      && 'Saved as unpublished'}
+                {status === 'missing'    && 'Not created'}
               </span>
             </div>
           );

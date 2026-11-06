@@ -1,4 +1,7 @@
-import { DraftIssue } from './backendCheck';
+interface DraftIssue {
+  problem: string;
+  fix: string;
+}
 
 /** What went wrong with a clone, and how to fix it. */
 export function IssueList({ issues }: { issues: DraftIssue[] }) {

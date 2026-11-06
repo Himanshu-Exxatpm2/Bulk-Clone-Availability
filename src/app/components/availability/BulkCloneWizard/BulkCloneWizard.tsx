@@ -30,12 +30,11 @@ import { CreationProgress } from './CreationProgress';
 import { CreationSummary } from './CreationSummary';
 import { cleanName, finalizeNames } from './naming';
 import { CURRENT_USER_EMAIL, HistoryEntry, describeSource, describeTarget, statusFor } from '../../../data/bulkHistory';
-import { DraftIssue, simulateBackendCheck } from './backendCheck';
+import { sourceDeleted } from './backendCheck';
 
 interface CreationResult {
   availability: Availability;
-  status: 'created' | 'draft';
-  issues?: DraftIssue[];
+  status: 'created' | 'missing';
 }
 
 interface Step4Data {
@@ -46,8 +45,8 @@ interface Step4Data {
 type WizardState = 'steps' | 'progress' | 'summary';
 
 // Step order: 1 Naming, 2 Dates, 3 Review, 4 Publish.
-// Nothing stops the batch up front: an availability with a data problem is still
-// cloned, saved as unpublished, and the reason is shown when the clones are created.
+// Nothing stops the batch up front, and no field (location included) holds a clone back:
+// every clone is created and published as the publish preference says.
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
@@ -109,14 +108,10 @@ export function BulkCloneWizard({
   const [confirmCreate, setConfirmCreate] = useState(false);
 
   // What the backend rejects. Only read once creation starts; nothing earlier knows.
-  const draftIssues = useMemo(() => {
-    const out: Record<string, DraftIssue[]> = {};
-    for (const a of activeAvailabilities) {
-      const issues = simulateBackendCheck(a);
-      if (issues.length > 0) out[a.id] = issues;
-    }
-    return out;
-  }, [activeAvailabilities]);
+  const missingIds = useMemo(
+    () => activeAvailabilities.filter(sourceDeleted).map((a) => a.id),
+    [activeAvailabilities],
+  );
 
   // ── Step navigation ──────────────────────────────────────────────────────
   const handleBack = () => {
@@ -193,7 +188,8 @@ export function BulkCloneWizard({
 
   function buildCreatedAvailabilities(): Availability[] {
     const today = todayISO();
-    return creationResults.map((r) => {
+    // A clone whose original was deleted before the run was never created
+    return creationResults.filter((r) => r.status !== 'missing').map((r) => {
       // Published once any audience can see it today; otherwise Unpublished
       const derivedStatus: AvailabilityStatus = statusForPreferences(step4Data.preferences);
       // The last date schools can request is the latest due date among the preferences
@@ -207,7 +203,7 @@ export function BulkCloneWizard({
           step2Data.dates[r.availability.id]?.startDate ?? r.availability.startDate,
         endDate:
           step2Data.dates[r.availability.id]?.endDate ?? r.availability.endDate,
-        status: r.status === 'draft' ? 'Unpublished' : derivedStatus,
+        status: derivedStatus,
         dueDate: dueDates.length > 0 ? dueDates.sort()[dueDates.length - 1] : undefined,
         publishOptions: step4Data.preferences.map((p) => ({
           whoSees: p.whoSees ?? '',
@@ -235,18 +231,19 @@ export function BulkCloneWizard({
   // `results` is empty while the job is still running
   function buildHistoryEntry(results: CreationResult[], names: Record<string, string> = savedNames): HistoryEntry {
     const created = results.filter((r) => r.status === 'created').length;
-    const drafts = results.filter((r) => r.status === 'draft').length;
+    const drafts = 0;
+    const failed = results.filter((r) => r.status === 'missing').length;
     return {
       id: batchIdRef.current,
       type: 'Bulk Clone',
       ranAt: ranAtRef.current,
       runBy: CURRENT_USER_EMAIL,
-      status: results.length < activeAvailabilities.length ? 'In progress' : statusFor(created, drafts, 0),
+      status: results.length < activeAvailabilities.length ? 'In progress' : statusFor(created, drafts, failed),
       namePattern: step1Data.template.trim(),
       total: activeAvailabilities.length,
       created,
       drafts,
-      failed: 0,
+      failed,
       source: describeSource(activeAvailabilities),
       target: describeTarget(
         step2Data.mode,
@@ -257,8 +254,10 @@ export function BulkCloneWizard({
         availabilityId: cloneIdFor(r.availability.id),
         stepOneName: resolvedNames[r.availability.id] || r.availability.name,
         savedName: names[r.availability.id] || resolvedNames[r.availability.id] || r.availability.name,
-        status: r.status,
-        problems: r.issues,
+        status: r.status === 'missing' ? 'failed' : 'created',
+        problems: r.status === 'missing'
+          ? [{ problem: 'The original availability was deleted before the clone ran.', fix: 'Nothing to do unless the delete was a mistake; then restore the original and clone it again.' }]
+          : undefined,
       })),
     };
   }
@@ -321,7 +320,7 @@ export function BulkCloneWizard({
                   availabilities={activeAvailabilities}
                   resolvedNames={savedNames}
                   stepOneNames={resolvedNames}
-                  draftIssues={draftIssues}
+                  missingIds={missingIds}
                   onComplete={(results) => {
                     setCreationResults(results);
                     onHistoryChange(buildHistoryEntry(results));

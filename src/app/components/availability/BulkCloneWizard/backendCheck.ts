@@ -1,22 +1,12 @@
 import { Availability } from '../../../data/mockAvailabilities';
 
-// Stand-in for the backend call that runs when the clones are created. The only thing
-// that can stop a clone from publishing is its location: if the location has been marked
-// inactive, the clone is saved Unpublished and stays that way until the coordinator fixes
-// the location and changes the publish preference. No other field is checked.
-// The prototype marks such a record with `locationInactive` on the mock record.
-
-export interface DraftIssue {
-  problem: string;
-  fix: string;
-}
-
-export function simulateBackendCheck(a: Availability): DraftIssue[] {
-  if (!a.locationInactive) return [];
-  return [
-    {
-      problem: `Location "${a.location}" is inactive, so this availability is saved as Unpublished and will not be published.`,
-      fix: 'Open the availability, choose an active location, save it, then change the publish preference. It stays Unpublished until you do.',
-    },
-  ];
+// Stand-in for the backend call that runs when the clones are created. Nothing about the
+// location, discipline or any other field holds a clone back: an availability at an inactive
+// location is created and published exactly as the publish preference says, the same as the
+// single-row copy. The one thing that can stop a clone is that the original is gone: it, or
+// its location, was deleted after it was selected. Deleting a location also deletes its
+// availabilities, so that is the only way a deletion shows up here. That row is skipped and
+// the rest of the batch carries on. The prototype marks such a record with `deletedBeforeRun`.
+export function sourceDeleted(a: Availability): boolean {
+  return !!a.deletedBeforeRun;
 }
