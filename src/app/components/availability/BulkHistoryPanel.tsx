@@ -144,6 +144,7 @@ function JobAvailabilities({
         </div>
       )}
 
+      {tab === 'created' && (
       <div className="flex flex-wrap items-center gap-2 border-b border-neutral-100 px-4 py-2.5">
         <label className="relative min-w-[180px] flex-1">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-neutral-500" aria-hidden />
@@ -197,6 +198,7 @@ function JobAvailabilities({
           </button>
         )}
       </div>
+      )}
 
       {pageRows.length === 0 ? (
         <p className="px-4 py-8 text-center text-sm text-neutral-600">No availabilities match.</p>
