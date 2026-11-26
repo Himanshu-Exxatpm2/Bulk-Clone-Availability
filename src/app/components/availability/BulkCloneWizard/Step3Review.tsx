@@ -18,26 +18,9 @@ interface Step3ReviewProps {
   availabilities: Availability[];
   resolvedNames: Record<string, string>;
   dates: Record<string, { startDate: string; endDate: string }>;
-  /** Rows removed so far; they stay out of the batch until restored. */
-  removedCount: number;
   /** False when everything was selected across all pages */
   canRemove: boolean;
   onDelete: (id: string) => void;
-  onRestoreAll: () => void;
-}
-
-function RestoreBar({ count, onRestoreAll }: { count: number; onRestoreAll: () => void }) {
-  if (count === 0) return null;
-  return (
-    <div className="flex items-center justify-between gap-3 rounded-lg border border-neutral-200 bg-card px-4 py-2.5 text-sm text-neutral-800">
-      <span>
-        {count} {count === 1 ? 'availability' : 'availabilities'} removed from this batch.
-      </span>
-      <button type="button" onClick={onRestoreAll} className="text-sm font-medium text-blue-600 hover:underline">
-        Restore {count === 1 ? 'it' : 'all'}
-      </button>
-    </div>
-  );
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -46,10 +29,8 @@ export function Step3Review({
   availabilities,
   resolvedNames,
   dates,
-  removedCount,
   canRemove,
   onDelete,
-  onRestoreAll,
 }: Step3ReviewProps) {
   const { pageRows, pager } = usePaging(availabilities);
 
@@ -60,13 +41,10 @@ export function Step3Review({
         <div className="w-12 h-12 rounded-full bg-neutral-100 flex items-center justify-center">
           <FontAwesomeIcon name="circleQuestion" className="w-5 h-5 text-neutral-600" aria-hidden="true" />
         </div>
-        <p className="text-sm font-semibold text-neutral-800">No availabilities remaining</p>
+        <p className="text-sm font-semibold text-neutral-800">No availabilities left to clone</p>
         <p className="text-xs text-neutral-600 text-center max-w-xs">
-          All availabilities have been removed from this batch.
+          Close this panel and select again.
         </p>
-        <button type="button" onClick={onRestoreAll} className="mt-1 text-sm font-medium text-blue-600 hover:underline">
-          Restore all {removedCount}
-        </button>
       </div>
     );
   }
@@ -108,8 +86,6 @@ export function Step3Review({
           </div>
         </div>
       </div>
-
-      <RestoreBar count={removedCount} onRestoreAll={onRestoreAll} />
 
       {/* ── Review table ──────────────────────────────────────────────────── */}
       <div className="bg-card rounded-xl shadow-[0_1px_1.5px_rgba(0,0,0,0.1),0_1px_1px_rgba(0,0,0,0.1)] overflow-hidden">

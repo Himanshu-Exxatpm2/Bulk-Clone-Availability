@@ -295,7 +295,7 @@ export function BulkCloneWizard({
         ? 'Choose a start and end date to continue.'
         : 'Fix the dates marked in red to continue.'
       : currentStep === 3 && activeAvailabilities.length === 0
-      ? 'Restore at least one availability to continue.'
+      ? 'No availabilities left to clone.'
       : currentStep === 4 && !step4Valid
       ? Object.keys(publishIssues).length > 0
         ? 'Some clones would publish or close after their rotation starts.'
@@ -361,10 +361,8 @@ export function BulkCloneWizard({
                     availabilities={activeAvailabilities}
                     resolvedNames={resolvedNames}
                     dates={step2Data.dates}
-                    removedCount={removedIds.length}
                     canRemove={!removalLocked}
                     onDelete={(id) => setRemovedIds((prev) => [...prev, id])}
-                    onRestoreAll={() => setRemovedIds([])}
                   />
                 )}
                 {currentStep === 4 && (
