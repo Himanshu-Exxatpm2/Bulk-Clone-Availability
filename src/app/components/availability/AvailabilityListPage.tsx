@@ -312,7 +312,7 @@ export function AvailabilityListPage({ currentPath, onNavigate }: AvailabilityLi
     setJobBanner({
       phase: 'running',
       jobId: job.progressEntry.id,
-      text: `Bulk clone availability initiated for ${job.finalEntry.total} ${job.finalEntry.total === 1 ? 'availability' : 'availabilities'}. It will take some time to publish, and you can keep working. Click to check the status in Bulk Creation History.`,
+      text: `Bulk clone availability initiated for ${job.finalEntry.total} ${job.finalEntry.total === 1 ? 'availability' : 'availabilities'}. It will take some time to publish, and you can keep working. You can check the status in Bulk Creation History.`,
     });
     setWizardOpen(false);
     handleClearAll();
@@ -326,8 +326,8 @@ export function AvailabilityListPage({ currentPath, onNavigate }: AvailabilityLi
         jobId: job.finalEntry.id,
         tone: issues ? 'issues' : 'ok',
         text: issues
-          ? `Bulk clone finished: ${created} of ${total} created, ${failed} not created. Click to open Bulk Creation History.`
-          : `Bulk clone completed: all ${total} availabilities were created. Click to open Bulk Creation History.`,
+          ? `Bulk clone finished: ${created} of ${total} created, ${failed} not created. See Bulk Creation History for details.`
+          : `Bulk clone completed: all ${total} availabilities were created. See Bulk Creation History for details.`,
       });
     }, 4000);
   };
@@ -432,13 +432,6 @@ export function AvailabilityListPage({ currentPath, onNavigate }: AvailabilityLi
   const handleBulkClone = () =>
     selectedIds.length > ADVISORY_THRESHOLD ? setLargeBatchConfirmOpen(true) : setWizardOpen(true);
 
-  // How many availabilities each job made, for the "View availabilities" link in history
-  const cloneCounts = useMemo(() => {
-    const out: Record<string, number> = {};
-    for (const a of availabilities) if (a.clonedFrom) out[a.clonedFrom.batchId] = (out[a.clonedFrom.batchId] ?? 0) + 1;
-    return out;
-  }, [availabilities]);
-
   const selectedAvailabilities = useMemo<Availability[]>(
     () => availabilities.filter((a) => selectedIds.includes(a.id)),
     [availabilities, selectedIds],
@@ -489,17 +482,10 @@ export function AvailabilityListPage({ currentPath, onNavigate }: AvailabilityLi
       {historyOpen && (
         <BulkHistoryPanel
           entries={history}
-          cloneCounts={cloneCounts}
           availabilities={availabilities}
           onOpenAvailability={(id) => onNavigate(`/internships/${id}`)}
           initialOpenId={historyOpenId}
           onClose={() => { setHistoryOpen(false); setHistoryOpenId(null); }}
-          onViewJob={(id) => {
-            setJobFilter(id);
-            setHistoryOpen(false);
-            handleClearAll();
-            onNavigate(TAB_ROUTES.All);
-          }}
         />
       )}
 
@@ -531,7 +517,7 @@ export function AvailabilityListPage({ currentPath, onNavigate }: AvailabilityLi
           </div>
         </div>
 
-        {/* As in production: under the title row, above the tabs. Click opens the job in Bulk Creation History; the X dismisses it. */}
+        {/* As in production: under the title row, above the tabs. Plain text; the X dismisses it. */}
         {jobBanner && (
           <div
             role="status"
@@ -543,13 +529,7 @@ export function AvailabilityListPage({ currentPath, onNavigate }: AvailabilityLi
                 : 'border-green-200 bg-green-50'
             }`}
           >
-            <button
-              type="button"
-              onClick={() => { setHistoryOpenId(jobBanner.jobId); setHistoryOpen(true); }}
-              className="min-w-0 flex-1 text-left hover:underline"
-            >
-              {jobBanner.text}
-            </button>
+            <p className="min-w-0 flex-1">{jobBanner.text}</p>
             <button type="button" onClick={() => setJobBanner(null)} aria-label="Dismiss" className="shrink-0 text-neutral-700 hover:text-neutral-900">
               <FontAwesomeIcon name="x" className="size-4" aria-hidden="true" />
             </button>

@@ -141,18 +141,6 @@ export function BulkCloneWizard({
     step4Data.preferences.every(isCardValid) &&
     Object.keys(publishIssues).length === 0;
 
-  // What the confirmation says about publishing, one line per publish preference: now, on a date, or not published
-  const publishLines = step4Data.preferences.map((pref) => {
-    const today = todayISO();
-    const who = pref.whoSees ? `Visible to ${pref.whoSees}` : 'Publish preference';
-    if (pref.publishWhen === 'Do Not Publish') return `${who}: not published`;
-    if (pref.publishWhen === 'Scheduled' && pref.publishOn > today) {
-      const date = new Date(`${pref.publishOn}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-      return `${who}: goes live on ${date}`;
-    }
-    return `${who}: goes live now`;
-  });
-
   const startCreation = () => {
     if (!step4Valid) return;
     setConfirmCreate(false);
@@ -295,7 +283,7 @@ export function BulkCloneWizard({
         ? 'Choose a start and end date to continue.'
         : 'Fix the dates marked in red to continue.'
       : currentStep === 3 && activeAvailabilities.length === 0
-      ? 'No availabilities left to clone.'
+      ? 'Restore at least one availability to continue.'
       : currentStep === 4 && !step4Valid
       ? Object.keys(publishIssues).length > 0
         ? 'Some clones would publish or close after their rotation starts.'
@@ -361,8 +349,10 @@ export function BulkCloneWizard({
                     availabilities={activeAvailabilities}
                     resolvedNames={resolvedNames}
                     dates={step2Data.dates}
+                    removedCount={removedIds.length}
                     canRemove={!removalLocked}
                     onDelete={(id) => setRemovedIds((prev) => [...prev, id])}
+                    onRestoreAll={() => setRemovedIds([])}
                   />
                 )}
                 {currentStep === 4 && (
@@ -412,16 +402,9 @@ export function BulkCloneWizard({
       <AlertDialog open={confirmCreate} onOpenChange={setConfirmCreate}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>{`Create ${batchSummary.replace(' in this batch', '')}?`}</AlertDialogTitle>
-            <AlertDialogDescription asChild>
-              <div>
-                <p>They will be published as you set in the publish preferences, and schools will be able to see them once they go live.</p>
-                <ul className="mt-2 list-disc space-y-0.5 pl-5">
-                  {publishLines.map((line) => (
-                    <li key={line}>{line}</li>
-                  ))}
-                </ul>
-              </div>
+            <AlertDialogTitle>Go live?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {`${batchSummary.replace(' in this batch', '')} will be created and go live as set in your publish preferences. Schools will be able to see and request them once they are live.`}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

@@ -1,22 +1,18 @@
 import { useMemo, useState } from 'react';
-import { ArrowLeft, Search, SlidersHorizontal, X } from 'lucide-react';
+import { ArrowLeft, Search, X } from 'lucide-react';
 import { Sheet, SheetContent, SheetTitle } from '../ui/sheet';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
-import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
 import { HistoryEntry, HistoryRow, HistoryStatus } from '../../data/bulkHistory';
 import { Availability } from '../../data/mockAvailabilities';
 import { STATUS_CLASSES } from './AvailabilityListTable';
 import { TablePager, usePaging } from './BulkCloneWizard/TablePager';
 import { IssueList } from './BulkCloneWizard/IssueList';
-import { NameChange } from './BulkCloneWizard/NameChange';
 
 interface BulkHistoryPanelProps {
   entries: HistoryEntry[];
   /** Availabilities each job made that are still in the list, by job id */
-  cloneCounts: Record<string, number>;
   onClose: () => void;
   /** Close the panel and show only the availabilities this job made */
-  onViewJob: (id: string) => void;
   /** Every availability in the list, to show each job row's current status */
   availabilities: Availability[];
   /** Open one availability's page */
@@ -221,7 +217,6 @@ function JobAvailabilities({
                   ) : (
                     <p className="break-words text-sm text-neutral-850">{name}</p>
                   )}
-                  {tab === 'created' && <NameChange stepOne={r.stepOneName} saved={r.savedName} />}
                 </div>
                 {tab === 'created' && (
                   <span
@@ -247,14 +242,10 @@ function JobAvailabilities({
 
 function EntryDetail({
   entry,
-  cloned,
-  onViewJob,
   availabilities,
   onOpenAvailability,
 }: {
   entry: HistoryEntry;
-  cloned: number;
-  onViewJob: () => void;
   availabilities: Availability[];
   onOpenAvailability: (id: string) => void;
 }) {
@@ -279,11 +270,6 @@ function EntryDetail({
         <p className="text-sm text-neutral-700">
           Initiated by <span className="font-semibold text-neutral-900">{entry.runBy}</span> on {formatRan(entry.ranAt)}
         </p>
-        {entry.type === 'Bulk Clone' && cloned > 0 && (
-          <button type="button" onClick={onViewJob} className="pt-1 text-sm font-medium text-blue-600 hover:underline">
-            View {cloned} {cloned === 1 ? 'availability' : 'availabilities'} in the list
-          </button>
-        )}
       </div>
 
       {entry.rows ? (
@@ -299,33 +285,25 @@ function EntryDetail({
 
 // ── Panel ────────────────────────────────────────────────────────────────────
 
-export function BulkHistoryPanel({ entries, cloneCounts, onClose, onViewJob, availabilities, onOpenAvailability, initialOpenId = null }: BulkHistoryPanelProps) {
+export function BulkHistoryPanel({ entries, onClose, availabilities, onOpenAvailability, initialOpenId = null }: BulkHistoryPanelProps) {
   const [type, setType] = useState<string>(ALL);
   const [status, setStatus] = useState<string>(ALL);
-  const [runBy, setRunBy] = useState<string>(ALL);
-  const [from, setFrom] = useState('');
-  const [to, setTo] = useState('');
   const [page, setPage] = useState(0);
   const [openId, setOpenId] = useState<string | null>(initialOpenId);
 
-  const runners = useMemo(() => Array.from(new Set(entries.map((e) => e.runBy))).sort(), [entries]);
   const shown = useMemo(
     () =>
       [...entries]
         .filter(
           (e) =>
             (type === ALL || e.type === type) &&
-            (status === ALL || e.status === status) &&
-            (runBy === ALL || e.runBy === runBy) &&
-            (from === '' || e.ranAt.slice(0, 10) >= from) &&
-            (to === '' || e.ranAt.slice(0, 10) <= to),
+            (status === ALL || e.status === status),
         )
         .sort((a, b) => b.ranAt.localeCompare(a.ranAt)),
-    [entries, type, status, runBy, from, to],
+    [entries, type, status],
   );
-  const moreActive = (runBy !== ALL ? 1 : 0) + (from !== '' ? 1 : 0) + (to !== '' ? 1 : 0);
-  const anyActive = moreActive > 0 || type !== ALL || status !== ALL;
-  const clearAll = () => { setType(ALL); setStatus(ALL); setRunBy(ALL); setFrom(''); setTo(''); setPage(0); };
+  const anyActive = type !== ALL || status !== ALL;
+  const clearAll = () => { setType(ALL); setStatus(ALL); setPage(0); };
 
   const pages = Math.max(1, Math.ceil(shown.length / PAGE_SIZE));
   const pageRows = shown.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
@@ -359,8 +337,6 @@ export function BulkHistoryPanel({ entries, cloneCounts, onClose, onViewJob, ava
           {open ? (
             <EntryDetail
               entry={open}
-              cloned={cloneCounts[open.id] ?? 0}
-              onViewJob={() => onViewJob(open.id)}
               availabilities={availabilities}
               onOpenAvailability={onOpenAvailability}
             />
@@ -389,41 +365,6 @@ export function BulkHistoryPanel({ entries, cloneCounts, onClose, onViewJob, ava
                     <SelectItem value="Failed">Failed</SelectItem>
                   </SelectContent>
                 </Select>
-
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <button
-                      type="button"
-                      className="inline-flex h-9 items-center gap-1.5 rounded-md border border-neutral-300 bg-card px-3 text-sm text-neutral-850 hover:bg-neutral-50"
-                    >
-                      <SlidersHorizontal className="size-3.5" aria-hidden />
-                      More
-                      {moreActive > 0 && <span className="rounded-full bg-blue-500 px-1.5 text-xs font-medium text-white">{moreActive}</span>}
-                    </button>
-                  </PopoverTrigger>
-                  <PopoverContent align="start" className="w-72 space-y-3 p-3">
-                    <div>
-                      <p className="mb-1 text-xs text-neutral-700">Run by</p>
-                      <Select value={runBy} onValueChange={reset(setRunBy)}>
-                        <SelectTrigger size="sm" className="h-9 w-full" aria-label="Filter by who ran it">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value={ALL}>Anyone</SelectItem>
-                          {runners.map((r) => <SelectItem key={r} value={r}>{r}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <label className="block text-xs text-neutral-700">
-                      From
-                      <input type="date" value={from} max={to || undefined} onChange={(e) => reset(setFrom)(e.target.value)} className="mt-1 h-9 w-full rounded-md border border-neutral-300 px-2 text-sm text-neutral-900" />
-                    </label>
-                    <label className="block text-xs text-neutral-700">
-                      To
-                      <input type="date" value={to} min={from || undefined} onChange={(e) => reset(setTo)(e.target.value)} className="mt-1 h-9 w-full rounded-md border border-neutral-300 px-2 text-sm text-neutral-900" />
-                    </label>
-                  </PopoverContent>
-                </Popover>
 
                 {anyActive && (
                   <button type="button" onClick={clearAll} className="text-xs font-medium text-blue-600 hover:underline">
