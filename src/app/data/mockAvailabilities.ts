@@ -506,7 +506,6 @@ const seedClones: Omit<Availability, ListFields>[] = (() => {
   return [
     clone('seed-h3-1', 'avail-001', 'MedStar ICU - Nursing - Spring 2027', 'h-clone-3', '2026-10-29', 'Dhameliya, Darp', 'MedStar ICU - Spring Session #1 2025', '2027-01-04', '2027-03-19', 'Published'),
     clone('seed-h3-2', 'avail-004', 'MedStar NICU - Nursing - Spring 2027', 'h-clone-3', '2026-10-29', 'Dhameliya, Darp', 'MedStar NICU - Fall Session #1 2025', '2027-01-04', '2027-03-19', 'Published'),
-    clone('seed-h3-3', 'avail-006', 'MedStar Legacy Rehab - Physical Therapy - Spring 2027', 'h-clone-3', '2026-10-29', 'Dhameliya, Darp', 'MedStar Legacy Rehab - Physical Therapy - Spring 2026', '2027-01-04', '2027-03-19', 'Unpublished'),
     clone('seed-h2-1', 'avail-011', 'Hendrick ICU - BSN - Fall 2026', 'h-clone-2', '2026-10-20', 'Parikh, Ruchita', 'Hendrick ICU Nursing Rotation 2025', '2026-09-08', '2026-12-18', 'Published'),
     clone('seed-h2-2', 'avail-011', 'Hendrick ICU - BSN - Fall 2026 #2', 'h-clone-2', '2026-10-20', 'Parikh, Ruchita', 'Hendrick ICU Nursing Rotation 2025', '2026-09-08', '2026-12-18', 'Published'),
   ];

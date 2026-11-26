@@ -39,7 +39,7 @@ function formatRan(iso: string): string {
 const PILL: Record<HistoryStatus, string> = {
   'In progress': 'bg-blue-50 text-blue-600',
   Completed: 'bg-positive-default/10 text-positive-default',
-  'Completed with issues': 'bg-accent-100 text-warning-default',
+  'Partially completed': 'bg-accent-100 text-warning-default',
   Failed: 'bg-negative-default/10 text-negative-default',
 };
 
@@ -50,7 +50,6 @@ function StatusPill({ status }: { status: HistoryStatus }) {
 function results(e: HistoryEntry): string {
   if (e.status === 'In progress') return `Creating ${e.total} availabilities…`;
   const parts = [`${e.created} created`];
-  if (e.drafts > 0) parts.push(`${e.drafts} saved as unpublished`);
   if (e.failed > 0) parts.push(`${e.failed} failed`);
   return parts.join(' · ');
 }
@@ -58,14 +57,12 @@ function results(e: HistoryEntry): string {
 const count = (n: number) => `${n} ${n === 1 ? 'Availability' : 'Availabilities'}`;
 
 // ── The availabilities one job made ─────────────────────────────────────────
-// Searchable and filterable by status or result; a name opens that availability's page.
+// Two tabs. Created lists the clones with their status today (it can change after the job).
+// Failed lists the originals that were selected but not cloned, with the reason; it only
+// appears when at least one availability was not created.
 
-type RowStatus = Availability['status'] | 'Not created';
-const RESULT_LABEL: Record<HistoryRow['status'], string> = {
-  created: 'Created',
-  draft: 'Saved as unpublished',
-  failed: 'Failed',
-};
+type RowStatus = Availability['status'] | 'Deleted';
+type JobTab = 'created' | 'failed';
 
 function JobAvailabilities({
   rows,
@@ -76,52 +73,80 @@ function JobAvailabilities({
   availabilities: Availability[];
   onOpen: (id: string) => void;
 }) {
+  const createdRows = useMemo(() => rows.filter((r) => r.status !== 'failed'), [rows]);
+  const failedRows = useMemo(() => rows.filter((r) => r.status === 'failed'), [rows]);
+  const [pickedTab, setPickedTab] = useState<JobTab>('created');
+  const tab: JobTab = failedRows.length === 0 ? 'created' : pickedTab;
+
   const [term, setTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>(ALL);
-  const [resultFilter, setResultFilter] = useState<string>(ALL);
   const [discipline, setDiscipline] = useState<string>(ALL);
   const [program, setProgram] = useState<string>(ALL);
   const [location, setLocation] = useState<string>(ALL);
+  const switchTab = (next: JobTab) => {
+    setPickedTab(next);
+    setTerm(''); setStatusFilter(ALL); setDiscipline(ALL); setProgram(ALL); setLocation(ALL);
+  };
 
   const byId = useMemo(() => new Map(availabilities.map((a) => [a.id, a])), [availabilities]);
-  // The record behind a row, and its status today (it can change after the job)
-  const withStatus = useMemo(
+  // Created: the clone and its status today. Failed: the original that was selected, if it still exists.
+  const items = useMemo(
     () =>
-      rows.map((r) => {
-        const rec = r.availabilityId ? byId.get(r.availabilityId) : undefined;
-        return { row: r, rec, status: (rec ? rec.status : 'Not created') as RowStatus };
+      (tab === 'created' ? createdRows : failedRows).map((r) => {
+        const rec = (tab === 'created' ? r.availabilityId : r.sourceId) ? byId.get((tab === 'created' ? r.availabilityId : r.sourceId)!) : undefined;
+        const name = tab === 'created' ? r.savedName : r.originalName ?? r.stepOneName;
+        const status: RowStatus = rec && tab === 'created' ? rec.status : 'Deleted';
+        return { row: r, rec, name, status };
       }),
-    [rows, byId],
+    [tab, createdRows, failedRows, byId],
   );
-  // Discipline, program and location choices come from the records this job made
+  // Discipline, program and location choices come from the records on this tab
   const options = useMemo(() => {
-    const recs = withStatus.map((x) => x.rec).filter((r): r is Availability => !!r);
+    const recs = items.map((x) => x.rec).filter((r): r is Availability => !!r);
     const uniq = (xs: string[]) => Array.from(new Set(xs)).sort();
     return {
       discipline: uniq(recs.map((r) => r.discipline)),
       program: uniq(recs.flatMap((r) => r.programTypes)),
       location: uniq(recs.map((r) => r.location)),
     };
-  }, [withStatus]);
-  const shown = withStatus.filter(
-    ({ row, rec, status }) =>
-      (term.trim() === '' || row.savedName.toLowerCase().includes(term.trim().toLowerCase())) &&
-      (statusFilter === ALL || status === statusFilter) &&
-      (resultFilter === ALL || row.status === resultFilter) &&
+  }, [items]);
+  const shown = items.filter(
+    ({ rec, name, status }) =>
+      (term.trim() === '' || name.toLowerCase().includes(term.trim().toLowerCase())) &&
+      (tab === 'failed' || statusFilter === ALL || status === statusFilter) &&
       (discipline === ALL || rec?.discipline === discipline) &&
       (program === ALL || !!rec?.programTypes.includes(program)) &&
       (location === ALL || rec?.location === location),
   );
   const { pageRows, pager } = usePaging(shown);
   const filtered =
-    term.trim() !== '' || statusFilter !== ALL || resultFilter !== ALL || discipline !== ALL || program !== ALL || location !== ALL;
+    term.trim() !== '' || statusFilter !== ALL || discipline !== ALL || program !== ALL || location !== ALL;
 
   return (
     <div className="overflow-hidden rounded-lg border border-neutral-200 bg-card">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-neutral-200 px-4 py-2.5">
         <p className="text-sm font-semibold text-neutral-900">Availabilities in this job</p>
-        <p className="text-xs text-neutral-600">{filtered ? `${shown.length} of ${rows.length} shown` : `${rows.length} availabilities`}</p>
+        <p className="text-xs text-neutral-600">{filtered ? `${shown.length} of ${items.length} shown` : `${items.length} ${items.length === 1 ? 'availability' : 'availabilities'}`}</p>
       </div>
+
+      {failedRows.length > 0 && (
+        <div className="flex gap-5 border-b border-neutral-200 px-4" role="tablist" aria-label="Availabilities in this job">
+          {([['created', 'Created', createdRows.length], ['failed', 'Failed', failedRows.length]] as const).map(([key, label, n]) => (
+            <button
+              key={key}
+              type="button"
+              role="tab"
+              aria-selected={tab === key}
+              onClick={() => switchTab(key)}
+              className={`-mb-px border-b-2 py-2 text-sm font-medium ${
+                tab === key ? 'border-blue-500 text-blue-500' : 'border-transparent text-neutral-700 hover:text-neutral-900'
+              }`}
+            >
+              {label} ({n})
+            </button>
+          ))}
+        </div>
+      )}
 
       <div className="flex flex-wrap items-center gap-2 border-b border-neutral-100 px-4 py-2.5">
         <label className="relative min-w-[180px] flex-1">
@@ -135,29 +160,20 @@ function JobAvailabilities({
             className="h-9 w-full rounded-md border border-neutral-300 bg-card pl-8 pr-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
         </label>
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger size="sm" className="h-9 w-[150px] bg-card" aria-label="Filter by status">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ALL}>All statuses</SelectItem>
-            <SelectItem value="Published">Published</SelectItem>
-            <SelectItem value="Unpublished">Unpublished</SelectItem>
-            <SelectItem value="Closed">Closed</SelectItem>
-            <SelectItem value="Not created">Not created</SelectItem>
-          </SelectContent>
-        </Select>
-        <Select value={resultFilter} onValueChange={setResultFilter}>
-          <SelectTrigger size="sm" className="h-9 w-[190px] bg-card" aria-label="Filter by result">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ALL}>All results</SelectItem>
-            <SelectItem value="created">Created</SelectItem>
-            <SelectItem value="draft">Saved as unpublished</SelectItem>
-            <SelectItem value="failed">Failed</SelectItem>
-          </SelectContent>
-        </Select>
+        {tab === 'created' && (
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger size="sm" className="h-9 w-[150px] bg-card" aria-label="Filter by status">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL}>All statuses</SelectItem>
+              <SelectItem value="Published">Published</SelectItem>
+              <SelectItem value="Unpublished">Unpublished</SelectItem>
+              <SelectItem value="Closed">Closed</SelectItem>
+              <SelectItem value="Deleted">Deleted</SelectItem>
+            </SelectContent>
+          </Select>
+        )}
         {([
           { label: 'Discipline', all: 'All disciplines', value: discipline, set: setDiscipline, opts: options.discipline },
           { label: 'Program', all: 'All programs', value: program, set: setProgram, opts: options.program },
@@ -178,7 +194,7 @@ function JobAvailabilities({
         {filtered && (
           <button
             type="button"
-            onClick={() => { setTerm(''); setStatusFilter(ALL); setResultFilter(ALL); setDiscipline(ALL); setProgram(ALL); setLocation(ALL); }}
+            onClick={() => { setTerm(''); setStatusFilter(ALL); setDiscipline(ALL); setProgram(ALL); setLocation(ALL); }}
             className="text-xs text-neutral-700 hover:underline"
           >
             Clear
@@ -190,8 +206,8 @@ function JobAvailabilities({
         <p className="px-4 py-8 text-center text-sm text-neutral-600">No availabilities match.</p>
       ) : (
         <ul className="divide-y divide-neutral-100">
-          {pageRows.map(({ row: r, rec, status }) => (
-            <li key={r.availabilityId ?? r.savedName} className="px-4 py-2.5">
+          {pageRows.map(({ row: r, rec, name, status }) => (
+            <li key={r.availabilityId ?? r.sourceId ?? r.savedName} className="px-4 py-2.5">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   {rec ? (
@@ -200,21 +216,22 @@ function JobAvailabilities({
                       onClick={() => onOpen(rec.id)}
                       className="break-words text-left text-sm font-medium text-blue-600 hover:underline"
                     >
-                      {r.savedName}
+                      {name}
                     </button>
                   ) : (
-                    <p className="break-words text-sm text-neutral-850">{r.savedName}</p>
+                    <p className="break-words text-sm text-neutral-850">{name}</p>
                   )}
-                  <NameChange stepOne={r.stepOneName} saved={r.savedName} />
-                  {r.status === 'failed' && <p className="mt-0.5 text-xs text-negative-default">{RESULT_LABEL[r.status]}</p>}
+                  {tab === 'created' && <NameChange stepOne={r.stepOneName} saved={r.savedName} />}
                 </div>
-                <span
-                  className={`inline-flex shrink-0 rounded px-2.5 py-0.5 text-xs font-medium ${
-                    status === 'Not created' ? 'bg-negative-default/10 text-negative-default' : STATUS_CLASSES[status]
-                  }`}
-                >
-                  {status}
-                </span>
+                {tab === 'created' && (
+                  <span
+                    className={`inline-flex shrink-0 rounded px-2.5 py-0.5 text-xs font-medium ${
+                      status === 'Deleted' ? 'bg-neutral-100 text-neutral-700' : STATUS_CLASSES[status]
+                    }`}
+                  >
+                    {status}
+                  </span>
+                )}
               </div>
               {r.problems && <IssueList issues={r.problems} />}
             </li>
@@ -357,7 +374,7 @@ export function BulkHistoryPanel({ entries, cloneCounts, onClose, onViewJob, ava
                   <SelectContent>
                     <SelectItem value={ALL}>All types</SelectItem>
                     <SelectItem value="Bulk Clone">Bulk Clone</SelectItem>
-                    <SelectItem value="Multiple Availabilities">Multiple Availabilities</SelectItem>
+                    <SelectItem value="Bulk Creation">Bulk Creation</SelectItem>
                   </SelectContent>
                 </Select>
                 <Select value={status} onValueChange={reset(setStatus)}>
@@ -368,7 +385,7 @@ export function BulkHistoryPanel({ entries, cloneCounts, onClose, onViewJob, ava
                     <SelectItem value={ALL}>All statuses</SelectItem>
                     <SelectItem value="In progress">In progress</SelectItem>
                     <SelectItem value="Completed">Completed</SelectItem>
-                    <SelectItem value="Completed with issues">Completed with issues</SelectItem>
+                    <SelectItem value="Partially completed">Partially completed</SelectItem>
                     <SelectItem value="Failed">Failed</SelectItem>
                   </SelectContent>
                 </Select>

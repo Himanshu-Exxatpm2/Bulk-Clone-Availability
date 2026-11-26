@@ -163,7 +163,7 @@ export function CreationSummary({
           )}
           {counts.partial > 0 && (
             <p className="text-warning-default">
-              {`${plural(counts.partial, 'availability was', 'availabilities were')} created without an inactive location. The other locations were added.`}
+              {`${plural(counts.partial, 'availability was', 'availabilities were')} created with an inactive location left out. The availability was created; the inactive location was skipped.`}
             </p>
           )}
           {counts.renamed > 0 && (
@@ -188,7 +188,7 @@ export function CreationSummary({
                   {!notCreated && <NameChange stepOne={stepOneNames[r.availability.id]} saved={name} />}
                   {o.kind === 'partial' && (
                     <span className="mt-0.5 block text-xs text-warning-default">
-                      {`Created without ${o.leftOut.join(', ')} (inactive).`}
+                      {`${o.leftOut.join(', ')} ${o.leftOut.length === 1 ? 'is' : 'are'} inactive and ${o.leftOut.length === 1 ? 'was' : 'were'} left out of the availability. The availability was created.`}
                     </span>
                   )}
                   {o.kind === 'inactive' && (

@@ -26,14 +26,11 @@ import { Step1Naming, Step1Data } from './Step1Naming';
 import { Step2Dates, Step2Data, defaultRollMonths, rolledDates } from './Step2Dates';
 import { Step3Review } from './Step3Review';
 import { Step4Publish, publishRowIssues } from './Step4Publish';
-import { CreationProgress } from './CreationProgress';
-import { CreationSummary } from './CreationSummary';
 import { finalizeNames, resolveName } from './naming';
 import { CURRENT_USER_EMAIL, HistoryEntry, describeSource, describeTarget, statusFor } from '../../../data/bulkHistory';
 import { CreationResult, cloneOutcome, wasCreated } from './backendCheck';
-import { creationMode } from '../creationMode';
 
-/** A job handed to the Availability list when it runs behind the scenes (submit mode) */
+/** A job handed to the Availability list when the coordinator clicks Done: it runs behind the scenes */
 export interface SubmittedJob {
   /** The history entry while the job is running */
   progressEntry: HistoryEntry;
@@ -48,7 +45,6 @@ interface Step4Data {
   preferences: PublishPreferenceCardState[];
 }
 
-type WizardState = 'steps' | 'progress' | 'summary';
 
 // Step order: 1 Naming, 2 Dates, 3 Review, 4 Publish.
 // Nothing stops the batch up front; only the backend can know what it will accept, so it is
@@ -65,12 +61,10 @@ interface BulkCloneWizardProps {
   /** Set when everything was selected across all pages: the Review step doesn't allow removing rows */
   removalLocked?: boolean;
   onClose: () => void;
-  /** Called when the coordinator leaves the result screen; carries the clones and the history record of this job. */
-  onCloneComplete: (created: Availability[], historyEntry: HistoryEntry) => void;
-  /** The history record of this job: written as In progress when creation starts, then replaced with the result. */
+  /** The history record of this job: written as In progress when Create is confirmed. */
   onHistoryChange: (entry: HistoryEntry) => void;
-  /** Submit mode only: the job runs behind the scenes and the wizard closes straight away */
-  onSubmitJob?: (job: SubmittedJob) => void;
+  /** Called on Done: the job runs behind the scenes, the wizard closes and a banner on the list tracks it */
+  onSubmitJob: (job: SubmittedJob) => void;
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -80,11 +74,9 @@ export function BulkCloneWizard({
   existingNames,
   removalLocked = false,
   onClose,
-  onCloneComplete,
   onHistoryChange,
   onSubmitJob,
 }: BulkCloneWizardProps) {
-  const [wizardState, setWizardState] = useState<WizardState>('steps');
   const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4>(1);
   // Rows removed in Review stay removed across Back/Next
   const [removedIds, setRemovedIds] = useState<string[]>([]);
@@ -97,7 +89,8 @@ export function BulkCloneWizard({
   const firstDatesRef = useRef<string | null>(null);
 
   const [step4Data, setStep4Data] = useState<Step4Data>(() => ({ preferences: [makeEmptyCard()] }));
-  const [creationResults, setCreationResults] = useState<CreationResult[]>([]);
+  // The job started by Create, handed to the list when the coordinator clicks Done
+  const [pendingJob, setPendingJob] = useState<SubmittedJob | null>(null);
   // One job: its id links every clone back to its history entry; the time is when creation started
   const batchIdRef = useRef(`batch-${Date.now()}`);
   const ranAtRef = useRef<string>(new Date().toISOString());
@@ -121,8 +114,6 @@ export function BulkCloneWizard({
     () => Object.fromEntries(activeAvailabilities.map((a) => [a.id, resolveName(a, step1Data.template, newDates)])),
     [activeAvailabilities, step1Data.template, newDates],
   );
-  // Names as saved: numbered across the whole batch and every existing availability. Fixed when Create is confirmed.
-  const [savedNames, setSavedNames] = useState<Record<string, string>>({});
   const [confirmCreate, setConfirmCreate] = useState(false);
 
   // What the backend does with each clone. Only read once creation starts; nothing earlier knows.
@@ -150,50 +141,44 @@ export function BulkCloneWizard({
     step4Data.preferences.every(isCardValid) &&
     Object.keys(publishIssues).length === 0;
 
-  // Clones that go live as soon as they are created, grouped by who sees them
-  const goLiveNow = (() => {
+  // What the confirmation says about publishing, one line per publish preference: now, on a date, or not published
+  const publishLines = step4Data.preferences.map((pref) => {
     const today = todayISO();
-    const byAudience = new Map<string, number>();
-    for (const pref of step4Data.preferences) {
-      const live = pref.publishWhen === 'Now' || (pref.publishWhen === 'Scheduled' && pref.publishOn <= today);
-      if (live && pref.whoSees) byAudience.set(pref.whoSees, (byAudience.get(pref.whoSees) ?? 0) + activeAvailabilities.length);
+    const who = pref.whoSees ? `Visible to ${pref.whoSees}` : 'Publish preference';
+    if (pref.publishWhen === 'Do Not Publish') return `${who}: not published`;
+    if (pref.publishWhen === 'Scheduled' && pref.publishOn > today) {
+      const date = new Date(`${pref.publishOn}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+      return `${who}: goes live on ${date}`;
     }
-    return [...byAudience.entries()];
-  })();
-  const goLiveText = (() => {
-    const total = goLiveNow.reduce((sum, [, n]) => sum + n, 0);
-    const parts = goLiveNow.map(([who, n], i) => (i === 0 ? `${n} ${n === 1 ? 'availability' : 'availabilities'} will go live now to ${who}` : `${n} to ${who}`));
-    return total === 0 ? '' : parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}` : parts[0];
-  })();
+    return `${who}: goes live now`;
+  });
 
   const startCreation = () => {
     if (!step4Valid) return;
     setConfirmCreate(false);
-    // Names are now also numbered against every availability already in the list
-    // Only clones that will be created take a number; one that is not created keeps its step 1 name
+    // Names are numbered against every availability already in the list, at creation.
+    // Only clones that will be created take a number; one that is not created keeps its naming-step name.
     const saved = finalizeNames(activeAvailabilities.filter((a) => outcomes[a.id].kind === 'created' || outcomes[a.id].kind === 'partial'), resolvedNames, existingNames);
     const names = Object.fromEntries(Object.entries(saved).map(([id, f]) => [id, f.name]));
-    setSavedNames(names);
     ranAtRef.current = new Date().toISOString();
-    if (creationMode() === 'submit' && onSubmitJob) {
-      // Submit mode: nothing to watch here. The list shows the job underway and then how it ended.
-      const results: CreationResult[] = activeAvailabilities.map((a) => ({ availability: a, outcome: outcomes[a.id] }));
-      onSubmitJob({
-        progressEntry: buildHistoryEntry([], names),
-        finalEntry: buildHistoryEntry(results, names),
-        created: buildCreatedAvailabilities(results, names),
-      });
-      return;
-    }
+    const results: CreationResult[] = activeAvailabilities.map((a) => ({ availability: a, outcome: outcomes[a.id] }));
+    const job: SubmittedJob = {
+      progressEntry: buildHistoryEntry([], names),
+      finalEntry: buildHistoryEntry(results, names),
+      created: buildCreatedAvailabilities(results, names),
+    };
     // The job is on record from the moment it starts, whether or not the browser stays open
-    onHistoryChange(buildHistoryEntry([], names));
-    setWizardState('progress');
+    onHistoryChange(job.progressEntry);
+    // The pop-up below tells the coordinator the job has started; Done hands it to the list
+    setPendingJob(job);
   };
-  // Anything that goes live straight away is confirmed first; otherwise creation starts at once
+  // Every Create is confirmed first, whether the clones go live now, on a date or are not published
   const handleCreate = () => {
-    if (!step4Valid) return;
-    if (goLiveNow.length > 0) setConfirmCreate(true);
-    else startCreation();
+    if (step4Valid) setConfirmCreate(true);
+  };
+  // Done (or the X) on the initiated message: the wizard closes and the banner on the list takes over
+  const finishInitiated = () => {
+    if (pendingJob) onSubmitJob(pendingJob);
   };
 
   const isLastStep = currentStep === 4;
@@ -205,7 +190,7 @@ export function BulkCloneWizard({
     setStep2Data(data);
   };
   const isDirty =
-    wizardState === 'steps' &&
+    pendingJob === null &&
     (currentStep > 1 ||
       step1Data.template !== '' ||
       removedIds.length > 0 ||
@@ -216,7 +201,7 @@ export function BulkCloneWizard({
   // One stable id per clone, shared by the Availability list and this job's history entry
   const cloneIdFor = (sourceId: string) => `clone-${batchIdRef.current}-${sourceId}`;
 
-  function buildCreatedAvailabilities(results: CreationResult[] = creationResults, names: Record<string, string> = savedNames): Availability[] {
+  function buildCreatedAvailabilities(results: CreationResult[], names: Record<string, string>): Availability[] {
     const today = todayISO();
     // Clones that were not created (inactive location, deleted original) are left out
     return results.filter(wasCreated).map((r) => {
@@ -261,20 +246,18 @@ export function BulkCloneWizard({
 
   // The record kept in Bulk Creation History for this job
   // `results` is empty while the job is still running
-  function buildHistoryEntry(results: CreationResult[], names: Record<string, string> = savedNames): HistoryEntry {
+  function buildHistoryEntry(results: CreationResult[], names: Record<string, string>): HistoryEntry {
     const created = results.filter(wasCreated).length;
-    const drafts = 0;
     const failed = results.length - created;
     return {
       id: batchIdRef.current,
       type: 'Bulk Clone',
       ranAt: ranAtRef.current,
       runBy: CURRENT_USER_EMAIL,
-      status: results.length < activeAvailabilities.length ? 'In progress' : statusFor(created, drafts, failed),
+      status: results.length < activeAvailabilities.length ? 'In progress' : statusFor(created, failed),
       namePattern: step1Data.template.trim(),
       total: activeAvailabilities.length,
       created,
-      drafts,
       failed,
       source: describeSource(activeAvailabilities),
       target: describeTarget(
@@ -285,6 +268,8 @@ export function BulkCloneWizard({
       rows: results.map((r) => ({
         availabilityId: cloneIdFor(r.availability.id),
         stepOneName: resolvedNames[r.availability.id] || r.availability.name,
+        originalName: r.availability.name,
+        sourceId: r.availability.id,
         savedName: names[r.availability.id] || resolvedNames[r.availability.id] || r.availability.name,
         status: wasCreated(r) ? 'created' : 'failed',
         problems:
@@ -293,7 +278,7 @@ export function BulkCloneWizard({
             : r.outcome.kind === 'inactive'
             ? [{ problem: `Not created: ${r.outcome.locations.join(', ')} ${r.outcome.locations.length === 1 ? 'is' : 'are'} inactive.`, fix: 'Make the location active, or clone to a different location.' }]
             : r.outcome.kind === 'partial'
-            ? [{ problem: `Created without ${r.outcome.leftOut.join(', ')} (inactive).`, fix: 'To include it, make the location active and add it to the availability.' }]
+            ? [{ problem: `${r.outcome.leftOut.join(', ')} ${r.outcome.leftOut.length === 1 ? 'is' : 'are'} inactive and ${r.outcome.leftOut.length === 1 ? 'was' : 'were'} left out of the availability. The availability was created.`, fix: 'To include it, make the location active and add it to the availability.' }]
             : undefined,
       })),
     };
@@ -346,56 +331,8 @@ export function BulkCloneWizard({
         onEscapeKeyDown={(e) => e.preventDefault()}
         className="flex h-full w-[75vw] max-w-none flex-col gap-0 bg-neutral-50 p-0 sm:max-w-none [&>button]:hidden"
       >
-          {/* ── Creation in flight ───────────────────────────────────────── */}
-          {wizardState === 'progress' && (
-            <>
-              {sheetHeader()}
-              {stepRow(5 as 1 | 2 | 3 | 4)}
-
-              <div className="flex-1 overflow-y-auto min-h-0 px-3 py-3">
-                <CreationProgress
-                  availabilities={activeAvailabilities}
-                  resolvedNames={savedNames}
-                  stepOneNames={resolvedNames}
-                  outcomes={outcomes}
-                  onComplete={(results) => {
-                    setCreationResults(results);
-                    onHistoryChange(buildHistoryEntry(results));
-                    setWizardState('summary');
-                  }}
-                />
-              </div>
-
-              <div className="flex-shrink-0 border-t border-neutral-200 px-4 py-3 flex items-center justify-end bg-card">
-                <Button disabled>
-                  <FontAwesomeIcon name="spinner" className="w-4 h-4 mr-2 animate-spin" aria-hidden="true" />
-                  Creating…
-                </Button>
-              </div>
-            </>
-          )}
-
-          {/* ── Summary ──────────────────────────────────────────────────── */}
-          {wizardState === 'summary' && (
-            <>
-              {sheetHeader(() => onCloneComplete(buildCreatedAvailabilities(), buildHistoryEntry(creationResults)))}
-              {stepRow(5 as 1 | 2 | 3 | 4)}
-
-              <div className="flex-1 overflow-y-auto min-h-0 px-3 py-3">
-                <CreationSummary
-                  results={creationResults}
-                  resolvedNames={savedNames}
-                  stepOneNames={resolvedNames}
-                  preferences={step4Data.preferences}
-                  onDone={() => onCloneComplete(buildCreatedAvailabilities(), buildHistoryEntry(creationResults))}
-                />
-              </div>
-            </>
-          )}
-
           {/* ── Wizard steps (1 Naming, 2 Dates, 3 Review, 4 Publish) ─────── */}
-          {wizardState === 'steps' && (
-            <>
+          <>
               {sheetHeader(requestClose)}
               {stepRow(currentStep)}
 
@@ -472,15 +409,21 @@ export function BulkCloneWizard({
                 </div>
               </div>
             </>
-          )}
       </SheetContent>
 
       <AlertDialog open={confirmCreate} onOpenChange={setConfirmCreate}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Go live now?</AlertDialogTitle>
-            <AlertDialogDescription>
-              {goLiveText}. Schools will be able to see and request {goLiveNow.reduce((sum, [, n]) => sum + n, 0) === 1 ? 'it' : 'them'} straight away.
+            <AlertDialogTitle>{`Create ${batchSummary.replace(' in this batch', '')}?`}</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div>
+                <p>They will be published as you set in the publish preferences, and schools will be able to see them once they go live.</p>
+                <ul className="mt-2 list-disc space-y-0.5 pl-5">
+                  {publishLines.map((line) => (
+                    <li key={line}>{line}</li>
+                  ))}
+                </ul>
+              </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -490,13 +433,30 @@ export function BulkCloneWizard({
         </AlertDialogContent>
       </AlertDialog>
 
+      <AlertDialog open={pendingJob !== null}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <FontAwesomeIcon name="circleCheck" className="size-5 text-positive-default" aria-hidden="true" />
+              Bulk creation initiated
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Bulk creation for {batchSummary.replace(' in this batch', '')} has been initiated. It will take some time to publish.
+              Meanwhile, feel free to keep working. You can check the status in Bulk Creation History.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction onClick={finishInitiated}>Done</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       <AlertDialog open={confirmDiscard} onOpenChange={setConfirmDiscard}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Discard this clone?</AlertDialogTitle>
             <AlertDialogDescription>
-              The dates, names and publish settings you've set for {batchSummary.replace(' in this batch', '')} will be
-              lost. Your selection on the list is kept.
+              Any names, dates or publish settings you have entered will be lost. Your selection on the list is kept.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

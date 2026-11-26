@@ -1,21 +1,26 @@
 import { Availability } from './mockAvailabilities';
 
-// Bulk Creation History: one entry per bulk job, from Multiple Availabilities or
+// Bulk Creation History: one entry per bulk job, from Bulk Creation or
 // Bulk Clone. Creating a single availability is not recorded here; it already
 // shows in the Availability list.
 
-export type HistoryType = 'Multiple Availabilities' | 'Bulk Clone';
+export type HistoryType = 'Bulk Creation' | 'Bulk Clone';
 // Cancelled and Undone are left out until those features exist
-export type HistoryStatus = 'In progress' | 'Completed' | 'Completed with issues' | 'Failed';
+export type HistoryStatus = 'In progress' | 'Completed' | 'Partially completed' | 'Failed';
 
 export interface HistoryRow {
   /** The record in the Availability list; missing when nothing was created */
   availabilityId?: string;
   /** Name the coordinator saw in the Naming step */
   stepOneName: string;
-  /** Name the availability was saved under */
+  /** Name the availability was saved under; for a row that was not created, the name it would have had */
   savedName: string;
-  status: 'created' | 'draft' | 'failed';
+  /** The availability that was selected to be cloned, as it was named then */
+  originalName?: string;
+  /** The selected original in the Availability list, if it still exists */
+  sourceId?: string;
+  /** created: a clone exists. failed: nothing was created, `problems` says why. */
+  status: 'created' | 'failed';
   problems?: Array<{ problem: string; fix: string }>;
 }
 
@@ -29,7 +34,6 @@ export interface HistoryEntry {
   namePattern: string;
   total: number;
   created: number;
-  drafts: number;
   failed: number;
   /** Bulk Clone only: short description of what was cloned and where it went */
   source?: string;
@@ -38,9 +42,9 @@ export interface HistoryEntry {
   rows?: HistoryRow[];
 }
 
-export function statusFor(created: number, drafts: number, failed: number): HistoryStatus {
-  if (failed > 0 && created + drafts === 0) return 'Failed';
-  if (failed > 0 || drafts > 0) return 'Completed with issues';
+export function statusFor(created: number, failed: number): HistoryStatus {
+  if (failed > 0 && created === 0) return 'Failed';
+  if (failed > 0) return 'Partially completed';
   return 'Completed';
 }
 
@@ -80,26 +84,26 @@ export const SEED_HISTORY: HistoryEntry[] = [
     type: 'Bulk Clone',
     ranAt: '2026-10-29T14:10:00Z',
     runBy: 'darp_test@mailinator.com',
-    status: 'Completed with issues',
+    status: 'Partially completed',
     namePattern: '@location - @discipline - Spring 2027',
     total: 3,
     created: 2,
-    drafts: 1,
-    failed: 0,
+    failed: 1,
     source: '3 availabilities',
     target: 'Roll forward: +1 year',
     rows: [
       { availabilityId: 'seed-h3-1', stepOneName: 'MedStar ICU - Nursing - Spring 2027', savedName: 'MedStar ICU - Nursing - Spring 2027', status: 'created' },
       { availabilityId: 'seed-h3-2', stepOneName: 'MedStar NICU - Nursing - Spring 2027', savedName: 'MedStar NICU - Nursing - Spring 2027', status: 'created' },
       {
-        availabilityId: 'seed-h3-3',
         stepOneName: 'MedStar Legacy Rehab - Physical Therapy - Spring 2027',
         savedName: 'MedStar Legacy Rehab - Physical Therapy - Spring 2027',
-        status: 'draft',
+        originalName: 'MedStar PT - Spring Session #1 2024',
+        sourceId: 'avail-011',
+        status: 'failed',
         problems: [
           {
-            problem: 'Location Group "MedStar Legacy Rehab Group" is no longer active in the system.',
-            fix: 'Open the availability, choose an active Location Group, then save it. It then goes live as its publish preference says.',
+            problem: 'Not created: MedStar Legacy Rehabilitation Center is inactive.',
+            fix: 'Make the location active, then clone the availability again.',
           },
         ],
       },
@@ -114,7 +118,6 @@ export const SEED_HISTORY: HistoryEntry[] = [
     namePattern: '@location - @program_type - Fall 2026',
     total: 2,
     created: 2,
-    drafts: 0,
     failed: 0,
     source: '2 availabilities',
     target: 'Custom: Sep 2026 – Dec 2026',
@@ -132,21 +135,20 @@ export const SEED_HISTORY: HistoryEntry[] = [
     namePattern: '@location - Summer 2027',
     total: 4,
     created: 0,
-    drafts: 0,
     failed: 4,
     source: '4 availabilities',
     target: 'Roll forward: +1 year',
     rows: [
-      { stepOneName: 'MedStar ICU - Summer 2027', savedName: 'MedStar ICU - Summer 2027', status: 'failed' },
-      { stepOneName: 'MedStar NICU - Summer 2027', savedName: 'MedStar NICU - Summer 2027', status: 'failed' },
-      { stepOneName: 'Hendrick ICU - Summer 2027', savedName: 'Hendrick ICU - Summer 2027', status: 'failed' },
-      { stepOneName: 'Hendrick Pharmacy - Summer 2027', savedName: 'Hendrick Pharmacy - Summer 2027', status: 'failed' },
+      { stepOneName: 'MedStar ICU - Summer 2027', savedName: 'MedStar ICU - Summer 2027', originalName: 'MedStar ICU - Spring Session #1 2025', sourceId: 'avail-001', status: 'failed', problems: [{ problem: 'Not created: MedStar ICU is inactive.', fix: 'Make the location active, then clone the availability again.' }] },
+      { stepOneName: 'MedStar NICU - Summer 2027', savedName: 'MedStar NICU - Summer 2027', originalName: 'MedStar NICU - Fall Session #1 2025', sourceId: 'avail-004', status: 'failed', problems: [{ problem: 'Not created: MedStar NICU is inactive.', fix: 'Make the location active, then clone the availability again.' }] },
+      { stepOneName: 'Hendrick ICU - Summer 2027', savedName: 'Hendrick ICU - Summer 2027', originalName: 'Hendrick ICU Nursing Rotation', sourceId: 'avail-015', status: 'failed', problems: [{ problem: 'Not created: Hendrick ICU is inactive.', fix: 'Make the location active, then clone the availability again.' }] },
+      { stepOneName: 'Hendrick Pharmacy - Summer 2027', savedName: 'Hendrick Pharmacy - Summer 2027', originalName: 'Hendrick Pharmacy - Summer 2026', status: 'failed', problems: [{ problem: 'The original availability was deleted before the clone ran.', fix: 'Nothing to do unless the delete was a mistake; then restore the original and clone it again.' }] },
     ],
   },
-  { id: 'h-m-6', type: 'Multiple Availabilities', ranAt: '2026-10-26T16:35:00Z', runBy: 'siteadminsingle@exxat.testinator.com', status: 'Completed', namePattern: '@availability_id WishlistAndExxatOne', total: 1, created: 1, drafts: 0, failed: 0 },
-  { id: 'h-m-5', type: 'Multiple Availabilities', ranAt: '2026-09-15T11:24:00Z', runBy: 'darp_test@mailinator.com', status: 'Completed', namePattern: '@availability_id@location_name', total: 2, created: 2, drafts: 0, failed: 0 },
-  { id: 'h-m-4', type: 'Multiple Availabilities', ranAt: '2026-08-03T14:32:00Z', runBy: 'darp_test@mailinator.com', status: 'Completed', namePattern: '@availability_id@location_city', total: 2, created: 2, drafts: 0, failed: 0 },
-  { id: 'h-m-3', type: 'Multiple Availabilities', ranAt: '2026-06-30T12:43:00Z', runBy: 'darp_test@mailinator.com', status: 'Completed', namePattern: '@availability_id@location_name', total: 3, created: 3, drafts: 0, failed: 0 },
-  { id: 'h-m-2', type: 'Multiple Availabilities', ranAt: '2026-05-12T16:31:00Z', runBy: 'darp_test@mailinator.com', status: 'Completed', namePattern: '@availability_id', total: 3, created: 3, drafts: 0, failed: 0 },
-  { id: 'h-m-1', type: 'Multiple Availabilities', ranAt: '2026-02-04T11:12:00Z', runBy: 'darp_test@mailinator.com', status: 'Completed', namePattern: 'test @availability_id', total: 101, created: 101, drafts: 0, failed: 0 },
+  { id: 'h-m-6', type: 'Bulk Creation', ranAt: '2026-10-26T16:35:00Z', runBy: 'siteadminsingle@exxat.testinator.com', status: 'Completed', namePattern: '@availability_id WishlistAndExxatOne', total: 1, created: 1, failed: 0 },
+  { id: 'h-m-5', type: 'Bulk Creation', ranAt: '2026-09-15T11:24:00Z', runBy: 'darp_test@mailinator.com', status: 'Completed', namePattern: '@availability_id@location_name', total: 2, created: 2, failed: 0 },
+  { id: 'h-m-4', type: 'Bulk Creation', ranAt: '2026-08-03T14:32:00Z', runBy: 'darp_test@mailinator.com', status: 'Completed', namePattern: '@availability_id@location_city', total: 2, created: 2, failed: 0 },
+  { id: 'h-m-3', type: 'Bulk Creation', ranAt: '2026-06-30T12:43:00Z', runBy: 'darp_test@mailinator.com', status: 'Completed', namePattern: '@availability_id@location_name', total: 3, created: 3, failed: 0 },
+  { id: 'h-m-2', type: 'Bulk Creation', ranAt: '2026-05-12T16:31:00Z', runBy: 'darp_test@mailinator.com', status: 'Completed', namePattern: '@availability_id', total: 3, created: 3, failed: 0 },
+  { id: 'h-m-1', type: 'Bulk Creation', ranAt: '2026-02-04T11:12:00Z', runBy: 'darp_test@mailinator.com', status: 'Completed', namePattern: 'test @availability_id', total: 101, created: 101, failed: 0 },
 ];

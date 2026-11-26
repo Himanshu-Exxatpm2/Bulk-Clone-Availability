@@ -298,7 +298,7 @@ export function AvailabilityListPage({ currentPath, onNavigate }: AvailabilityLi
   const [historyOpen, setHistoryOpen] = useState(false);
   // Set when the list is opened from a history entry: shows only the clones that job made
   const [jobFilter, setJobFilter] = useState<string | null>(null);
-  // Submit mode only: the job running behind the scenes, then how it ended. The banner opens the job in history.
+  // The job running behind the scenes, then how it ended. The banner under the page title opens it in Bulk Creation History.
   const [jobBanner, setJobBanner] = useState<{ phase: 'running' | 'done'; jobId: string; tone?: 'ok' | 'issues'; text: string } | null>(null);
   const [historyOpenId, setHistoryOpenId] = useState<string | null>(null);
 
@@ -306,13 +306,13 @@ export function AvailabilityListPage({ currentPath, onNavigate }: AvailabilityLi
   const upsertHistory = (entry: HistoryEntry) =>
     setHistory((prev) => (prev.some((h) => h.id === entry.id) ? prev.map((h) => (h.id === entry.id ? entry : h)) : [entry, ...prev]));
 
-  // The wizard has closed: the job runs behind the scenes and the list says so until it ends
+  // Done was clicked: the wizard closes, the job keeps running behind the scenes and the list says so until it ends
   const submitJob = (job: SubmittedJob) => {
     upsertHistory(job.progressEntry);
     setJobBanner({
       phase: 'running',
       jobId: job.progressEntry.id,
-      text: 'Your bulk clone request has been submitted. Bulk creation is underway. Please do not make any changes until it completes. We appreciate your patience.',
+      text: `Bulk clone availability initiated for ${job.finalEntry.total} ${job.finalEntry.total === 1 ? 'availability' : 'availabilities'}. It will take some time to publish, and you can keep working. Click to check the status in Bulk Creation History.`,
     });
     setWizardOpen(false);
     handleClearAll();
@@ -326,8 +326,8 @@ export function AvailabilityListPage({ currentPath, onNavigate }: AvailabilityLi
         jobId: job.finalEntry.id,
         tone: issues ? 'issues' : 'ok',
         text: issues
-          ? `Bulk clone finished: ${created} of ${total} created, ${failed} not created. Click to see the details.`
-          : `Bulk clone completed: all ${total} availabilities were created. Click to see the details.`,
+          ? `Bulk clone finished: ${created} of ${total} created, ${failed} not created. Click to open Bulk Creation History.`
+          : `Bulk clone completed: all ${total} availabilities were created. Click to open Bulk Creation History.`,
       });
     }, 4000);
   };
@@ -461,13 +461,6 @@ export function AvailabilityListPage({ currentPath, onNavigate }: AvailabilityLi
           onSubmitJob={submitJob}
           // Closing without creating keeps the selection, so the coordinator can reopen it
           onClose={() => setWizardOpen(false)}
-          onCloneComplete={(newOnes, entry) => {
-            // Names were already numbered against the existing list when the clones were created
-            if (newOnes.length > 0) setAvailabilities((prev) => [...newOnes, ...prev]);
-            upsertHistory(entry);
-            setWizardOpen(false);
-            handleClearAll();
-          }}
         />
       )}
 
@@ -510,23 +503,6 @@ export function AvailabilityListPage({ currentPath, onNavigate }: AvailabilityLi
         />
       )}
 
-      {jobBanner && (
-        <button
-          type="button"
-          onClick={() => { setHistoryOpenId(jobBanner.jobId); setHistoryOpen(true); if (jobBanner.phase === 'done') setJobBanner(null); }}
-          className={`block w-full border-b px-6 py-2.5 text-left text-sm ${
-            jobBanner.phase === 'running'
-              ? 'border-blue-200 bg-blue-50 text-blue-900'
-              : jobBanner.tone === 'issues'
-              ? 'border-red-200 bg-red-50 text-neutral-900'
-              : 'border-green-200 bg-green-50 text-neutral-900'
-          }`}
-          role="status"
-        >
-          {jobBanner.text}
-        </button>
-      )}
-
       {/* Page header */}
       <header className="bg-card border-b border-neutral-200">
         <div className="px-6 pt-5 flex items-start justify-between gap-4 flex-wrap">
@@ -554,6 +530,31 @@ export function AvailabilityListPage({ currentPath, onNavigate }: AvailabilityLi
             </button>
           </div>
         </div>
+
+        {/* As in production: under the title row, above the tabs. Click opens the job in Bulk Creation History; the X dismisses it. */}
+        {jobBanner && (
+          <div
+            role="status"
+            className={`mx-6 mt-4 flex items-center gap-3 rounded-lg border px-4 py-2 text-sm text-neutral-900 ${
+              jobBanner.phase === 'running'
+                ? 'border-blue-200 bg-blue-50'
+                : jobBanner.tone === 'issues'
+                ? 'border-red-200 bg-red-50'
+                : 'border-green-200 bg-green-50'
+            }`}
+          >
+            <button
+              type="button"
+              onClick={() => { setHistoryOpenId(jobBanner.jobId); setHistoryOpen(true); }}
+              className="min-w-0 flex-1 text-left hover:underline"
+            >
+              {jobBanner.text}
+            </button>
+            <button type="button" onClick={() => setJobBanner(null)} aria-label="Dismiss" className="shrink-0 text-neutral-700 hover:text-neutral-900">
+              <FontAwesomeIcon name="x" className="size-4" aria-hidden="true" />
+            </button>
+          </div>
+        )}
 
         <div className="px-6 mt-4 flex gap-6" role="tablist" aria-label="Availability views">
           {TABS.map((tab) => {
