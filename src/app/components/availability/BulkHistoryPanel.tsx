@@ -57,7 +57,7 @@ const count = (n: number) => `${n} ${n === 1 ? 'Availability' : 'Availabilities'
 // Failed lists the originals that were selected but not cloned, with the reason; it only
 // appears when at least one availability was not created.
 
-type RowStatus = Availability['status'] | 'Deleted';
+type RowStatus = Availability['status'];
 type JobTab = 'created' | 'failed';
 
 function JobAvailabilities({
@@ -91,7 +91,7 @@ function JobAvailabilities({
       (tab === 'created' ? createdRows : failedRows).map((r) => {
         const rec = (tab === 'created' ? r.availabilityId : r.sourceId) ? byId.get((tab === 'created' ? r.availabilityId : r.sourceId)!) : undefined;
         const name = tab === 'created' ? r.savedName : r.originalName ?? r.stepOneName;
-        const status: RowStatus = rec && tab === 'created' ? rec.status : 'Deleted';
+        const status: RowStatus | undefined = rec && tab === 'created' ? rec.status : undefined;
         return { row: r, rec, name, status };
       }),
     [tab, createdRows, failedRows, byId],
@@ -167,7 +167,6 @@ function JobAvailabilities({
               <SelectItem value="Published">Published</SelectItem>
               <SelectItem value="Unpublished">Unpublished</SelectItem>
               <SelectItem value="Closed">Closed</SelectItem>
-              <SelectItem value="Deleted">Deleted</SelectItem>
             </SelectContent>
           </Select>
         )}
@@ -220,11 +219,9 @@ function JobAvailabilities({
                     <p className="break-words text-sm text-neutral-850">{name}</p>
                   )}
                 </div>
-                {tab === 'created' && (
+                {tab === 'created' && status && (
                   <span
-                    className={`inline-flex shrink-0 rounded px-2.5 py-0.5 text-xs font-medium ${
-                      status === 'Deleted' ? 'bg-neutral-100 text-neutral-700' : STATUS_CLASSES[status]
-                    }`}
+                    className={`inline-flex shrink-0 rounded px-2.5 py-0.5 text-xs font-medium ${STATUS_CLASSES[status]}`}
                   >
                     {status}
                   </span>
