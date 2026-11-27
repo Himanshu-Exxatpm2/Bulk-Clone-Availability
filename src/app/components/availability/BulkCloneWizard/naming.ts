@@ -11,7 +11,6 @@ export type FieldName =
   | 'locationState'
   | 'yearOfStartDate'
   | 'discipline'
-  | 'programType'
   | 'experienceType';
 
 /** The new dates the clones will get, by availability id. The year of start date comes from here. */
@@ -23,7 +22,6 @@ export const TOKENS: Array<{ token: string; label: string; field: FieldName }> =
   { token: '@location_state',  label: 'Location State',  field: 'locationState' },
   { token: '@year_of_start_date', label: 'Year of Start Date', field: 'yearOfStartDate' },
   { token: '@discipline',      label: 'Discipline',      field: 'discipline' },
-  { token: '@program_type',    label: 'Program Type',    field: 'programType' },
   { token: '@experience_type', label: 'Experience Type', field: 'experienceType' },
 ];
 
@@ -51,9 +49,9 @@ function firstWithMore(values: string[]): string {
   return values.length === 1 ? values[0] : `${values[0]} (+${values.length - 1})`;
 }
 
-/** Up to 3 values are spelled out; beyond that "A (+n)". Used for several disciplines. */
-function spelledOrMore(values: string[]): string {
-  return values.length <= 3 ? values.join(', ') : firstWithMore(values);
+/** One discipline is used as it is; more than one reads Multi_Discipline (no "+N" as for locations). */
+function oneOrMulti(values: string[]): string {
+  return values.length <= 1 ? (values[0] ?? '') : 'Multi_Discipline';
 }
 
 export function fieldValue(a: Availability, field: FieldName, dates?: NewDates): string {
@@ -66,8 +64,7 @@ export function fieldValue(a: Availability, field: FieldName, dates?: NewDates):
     case 'locationState':   return locs[0] ? locationInfo(locs[0]).state : '';
     // The year the clone starts, so it follows the dates chosen in the Dates step
     case 'yearOfStartDate': return (dates?.[a.id]?.startDate ?? a.startDate).slice(0, 4);
-    case 'discipline':      return spelledOrMore(parseLocations(a.discipline ?? ''));
-    case 'programType':     return a.programType ?? '';
+    case 'discipline':      return oneOrMulti(parseLocations(a.discipline ?? ''));
     case 'experienceType':  return a.experienceType ?? '';
   }
 }

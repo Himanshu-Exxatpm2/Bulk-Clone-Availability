@@ -159,11 +159,11 @@ export function Step1Naming({
             <p className="text-xs text-blue-800 leading-relaxed">
               <span className="font-medium">Recommended format:</span>{' '}
               <span className="font-mono bg-blue-100 px-1 py-0.5 rounded text-blue-900">
-                Location – Discipline – Program Type – Season Year
+                Location – Discipline – Season Year
               </span>
             </p>
             <p className="text-xs text-blue-700 mt-1 leading-relaxed">
-              Example: <span className="italic">MedStar ICU – Nursing – BSN – Spring 2027</span>
+              Example: <span className="italic">MedStar ICU – Nursing – Spring 2027</span>
             </p>
             <ul className="mt-2 space-y-1 text-xs text-blue-700 list-disc list-inside">
               <li>Use a separator (e.g. <span className="font-mono bg-blue-100 px-0.5 rounded"> – </span>) between fields, and add the season and year as plain text so the clone is clearly distinct from the original.</li>
@@ -180,7 +180,7 @@ export function Step1Naming({
           Type freely. Use <span className="font-mono bg-neutral-100 px-1 rounded">@</span> to insert
           a merge field (e.g. <span className="font-mono bg-neutral-100 px-1 rounded">@discipline</span>).
           Add separators and season labels as plain text. With several locations, the name shows the first
-          followed by how many more, e.g. <span className="italic">Rockville (+2)</span>. Year of Start Date is the year of
+          followed by how many more, e.g. <span className="italic">Rockville (+2)</span>. With several disciplines, the name shows <span className="italic">Multi_Discipline</span>. Year of Start Date is the year of
           the new start date from the Dates step; this preview uses the suggested dates until you set them.
         </p>
 

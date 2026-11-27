@@ -115,15 +115,15 @@ export const SEED_HISTORY: HistoryEntry[] = [
     ranAt: '2026-10-20T09:42:00Z',
     runBy: 'ruchita.parikh@exxat.com',
     status: 'Completed',
-    namePattern: '@location - @program_type - Fall 2026',
+    namePattern: '@location - Fall 2026',
     total: 2,
     created: 2,
     failed: 0,
     source: '2 availabilities',
     target: 'Custom: Sep 2026 – Dec 2026',
     rows: [
-      { availabilityId: 'seed-h2-1', stepOneName: 'Hendrick ICU - BSN - Fall 2026', savedName: 'Hendrick ICU - BSN - Fall 2026', status: 'created' },
-      { availabilityId: 'seed-h2-2', stepOneName: 'Hendrick ICU - BSN - Fall 2026 #2', savedName: 'Hendrick ICU - BSN - Fall 2026 #2', status: 'created' },
+      { availabilityId: 'seed-h2-1', stepOneName: 'Hendrick ICU - Fall 2026', savedName: 'Hendrick ICU - Fall 2026', status: 'created' },
+      { availabilityId: 'seed-h2-2', stepOneName: 'Hendrick ICU - Fall 2026 #2', savedName: 'Hendrick ICU - Fall 2026 #2', status: 'created' },
     ],
   },
   {
